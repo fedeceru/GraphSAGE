@@ -12,11 +12,19 @@ Typical usage (see also scripts/run_ppi_experiments.ps1 for a full example):
 
 Writes ``val_stats.txt`` / ``test_stats.txt`` (loss + micro/macro F1) into a
 run-specific directory under ``--base_log_dir`` (see ``log_dir()`` below).
+
+Every run also writes ``metrics.csv`` (step, epoch, train/val loss and F1)
+into the same directory -- a structured counterpart to the console log,
+meant for programmatic plotting (e.g. notebook.ipynb's training-dynamics
+charts) without having to parse printed text. This is purely an added
+side-effect (like the existing TensorBoard summary writer below) and never
+changes what gets computed.
 """
 from __future__ import division
 from __future__ import print_function
 
 # stdlib
+import csv
 import os
 import time
 
@@ -304,6 +312,16 @@ def train(train_data, test_data=None):
     # Init variables
     sess.run(tf.global_variables_initializer(), feed_dict={adj_info_ph: minibatch.adj})
 
+    # Structured, per-step counterpart to the console log below (step, epoch,
+    # train/val loss and F1) -- written unconditionally, same spirit as the
+    # TensorBoard summary_writer above: an observational side effect that
+    # doesn't change what gets computed, meant for programmatic plotting
+    # (e.g. notebook.ipynb) without parsing printed text.
+    metrics_fp = open(os.path.join(log_dir(), "metrics.csv"), "w")
+    metrics_writer = csv.writer(metrics_fp)
+    metrics_writer.writerow(["step", "epoch", "train_loss", "train_f1_micro", "train_f1_macro",
+                              "val_loss", "val_f1_micro", "val_f1_macro"])
+
     # ---- training loop ----------------------------------------------------
     total_steps = 0
     avg_time = 0.0
@@ -349,15 +367,17 @@ def train(train_data, test_data=None):
 
             if total_steps % FLAGS.print_every == 0:
                 train_f1_mic, train_f1_mac = calc_f1(labels, outs[-1])
-                print("Iter:", '%04d' % iter, 
+                print("Iter:", '%04d' % iter,
                       "train_loss=", "{:.5f}".format(train_cost),
-                      "train_f1_mic=", "{:.5f}".format(train_f1_mic), 
-                      "train_f1_mac=", "{:.5f}".format(train_f1_mac), 
+                      "train_f1_mic=", "{:.5f}".format(train_f1_mic),
+                      "train_f1_mac=", "{:.5f}".format(train_f1_mac),
                       "val_loss=", "{:.5f}".format(val_cost),
-                      "val_f1_mic=", "{:.5f}".format(val_f1_mic), 
-                      "val_f1_mac=", "{:.5f}".format(val_f1_mac), 
+                      "val_f1_mic=", "{:.5f}".format(val_f1_mic),
+                      "val_f1_mac=", "{:.5f}".format(val_f1_mac),
                       "time=", "{:.5f}".format(avg_time))
- 
+                metrics_writer.writerow([total_steps, epoch + 1, train_cost, train_f1_mic, train_f1_mac,
+                                          val_cost, val_f1_mic, val_f1_mac])
+
             iter += 1
             total_steps += 1
 
@@ -366,6 +386,8 @@ def train(train_data, test_data=None):
 
         if total_steps > FLAGS.max_total_steps:
                 break
+
+    metrics_fp.close()
 
     # ---- final evaluation --------------------------------------------------
     print("Optimization Finished!")

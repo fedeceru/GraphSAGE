@@ -587,22 +587,30 @@ plt.show()
 md(r"""### 8.2 Watching the embedding space train: phases of aggregation
 
 Rather than looking only at the final, fully-trained embeddings, this
-section tracks how they get there. `scripts/train_embedding_snapshots.py`
-re-runs the best-performing unsupervised aggregator (`GraphSAGE-pool`) as a
-**single continuous training run** -- same seeds, same minibatch order as
-the reproduction above -- and dumps embeddings for every node at 7 points
-along the way: right after initialization (step 0), and after 50, 200, 800,
-3,000, 8,000 and 17,050 (~1 full epoch) gradient steps. Because it's one
-uninterrupted run, these are genuine snapshots of a single trajectory, not
-independent restarts.
+section tracks how they get there. `unsupervised_train.py` takes an
+`--embedding_snapshot_steps` flag (empty by default, so a normal run is
+unaffected) that dumps embeddings for every node at the given training steps
+*during* its regular, single continuous run -- same seeds, same minibatch
+order as the reproduction above, no separate or duplicate training required.
+The flag is generic (any aggregator can use it), so
+`scripts/run_ppi_experiments.ps1` passes it to all four unsupervised runs,
+each producing 7 snapshots along the way: right after initialization (step
+0), and after 100, 200, 800, 3,000, 8,000 and 17,050 (~1 full epoch)
+gradient steps. Because each is one uninterrupted run, these are genuine
+snapshots of a single trajectory, not independent restarts.
+
+Pick which aggregator to look at with `EMBED_MODEL` below -- it works for
+any of the four (`graphsage_mean`, `gcn`, `graphsage_seq`,
+`graphsage_maxpool`) as long as that variant was run with the snapshot flag;
+it defaults to the best unsupervised performer from the results table above.
 
 To make the stages visually comparable, a **fixed subsample of ~1,000 nodes**
 (stratified by split) is tracked through every stage, and each projection
-method below is fit **once** -- on the fully-trained (step 17,050) stage for
-PCA, jointly across all 7 stages at once for t-SNE -- so that a point's
-position means the same thing in every panel, and its movement across panels
-is directly readable rather than an artifact of re-fitting the projection
-each time.
+method below is fit **once** -- on the fully-trained (final) stage for PCA,
+jointly across all stages at once for t-SNE -- so that a point's position
+means the same thing in every panel, and its movement across panels is
+directly readable rather than an artifact of re-fitting the projection each
+time.
 """)
 
 code(r"""import sys
@@ -612,9 +620,28 @@ from matplotlib.lines import Line2D
 sys.path.insert(0, os.path.join(REPO, "src"))
 from graphsage.utils import load_data
 
+# Pick which aggregator's training progression to plot -- any of the four
+# MODELS work here as long as that variant was run with
+# --embedding_snapshot_steps (scripts/run_ppi_experiments.ps1 passes it to
+# all four). Change this to compare a different aggregator's progression.
 EMBED_MODEL = "graphsage_maxpool"  # our strongest unsupervised variant (see table above)
-SNAPSHOT_STEPS = [0, 50, 200, 800, 3000, 8000, 17050]
+
+SNAPSHOT_STEPS = [0, 100, 200, 800, 3000, 8000, 17050]
 snapshot_root = os.path.join(LOGS, "unsup-ppi", f"{EMBED_MODEL}_small_0.000010", "snapshots")
+
+available_snapshots = {
+    flag: os.path.isdir(os.path.join(LOGS, "unsup-ppi", f"{flag}_small_0.000010", "snapshots"))
+    for flag, _ in MODELS
+}
+print("Aggregators with snapshot data available:", [f for f, ok in available_snapshots.items() if ok] or "none")
+if not available_snapshots.get(EMBED_MODEL, False):
+    raise FileNotFoundError(
+        f"No snapshots found for '{EMBED_MODEL}'. Rerun it with --embedding_snapshot_steps "
+        "(see scripts/run_ppi_experiments.ps1), or set EMBED_MODEL above to one of the "
+        "aggregators listed as available."
+    )
+
+EMBED_MODEL_NAME = dict(MODELS)[EMBED_MODEL]  # display name, e.g. "GraphSAGE-pool", used in titles below
 
 split_colors = {"train": "#2a78d6", "val": "#eda100", "test": "#e34948"}
 blue_seq_cmap = LinearSegmentedColormap.from_list(
@@ -716,13 +743,13 @@ pca_shared.fit(snapshot_embeddings[SNAPSHOT_STEPS[-1]])
 pca_coords = {step: pca_shared.transform(snapshot_embeddings[step]) for step in SNAPSHOT_STEPS}
 
 fig_pca_stages = plot_stage_small_multiples(
-    pca_coords, "GraphSAGE-pool: embedding space across training (PCA, shared projection)", "PC1", "PC2")
+    pca_coords, f"{EMBED_MODEL_NAME}: embedding space across training (PCA, shared projection)", "PC1", "PC2")
 fig_pca_stages.savefig(os.path.join(RESULTS, "ppi_embedding_pca_stages.png"), dpi=140, bbox_inches="tight")
 plt.show()
 """)
 
 code(r"""fig_pca_traj = plot_stage_trajectories(
-    pca_coords, "GraphSAGE-pool: individual embedding trajectories (PCA space)", "PC1", "PC2")
+    pca_coords, f"{EMBED_MODEL_NAME}: individual embedding trajectories (PCA space)", "PC1", "PC2")
 fig_pca_traj.savefig(os.path.join(RESULTS, "ppi_embedding_pca_trajectories.png"), dpi=140)
 plt.show()
 """)
@@ -746,19 +773,21 @@ n_each = len(sub_ids)
 tsne_coords = {step: stacked_2d[i * n_each:(i + 1) * n_each] for i, step in enumerate(SNAPSHOT_STEPS)}
 
 fig_tsne_stages = plot_stage_small_multiples(
-    tsne_coords, "GraphSAGE-pool: embedding space across training (t-SNE, jointly-fit projection)", "t-SNE 1", "t-SNE 2")
+    tsne_coords, f"{EMBED_MODEL_NAME}: embedding space across training (t-SNE, jointly-fit projection)", "t-SNE 1", "t-SNE 2")
 fig_tsne_stages.savefig(os.path.join(RESULTS, "ppi_embedding_tsne_stages.png"), dpi=140, bbox_inches="tight")
 plt.show()
 """)
 
 code(r"""fig_tsne_traj = plot_stage_trajectories(
-    tsne_coords, "GraphSAGE-pool: individual embedding trajectories (t-SNE space)", "t-SNE 1", "t-SNE 2")
+    tsne_coords, f"{EMBED_MODEL_NAME}: individual embedding trajectories (t-SNE space)", "t-SNE 1", "t-SNE 2")
 fig_tsne_traj.savefig(os.path.join(RESULTS, "ppi_embedding_tsne_trajectories.png"), dpi=140)
 plt.show()
 """)
 
-md(r"""**Reading the progression.** Both projections tell a consistent story:
-at step 0 (random initialization) almost everything collapses into one dense
+md(r"""**Reading the progression.** (Discussed here for the default
+`EMBED_MODEL` choice above -- re-run this section after switching it to
+compare another aggregator.) Both projections tell a consistent story: at
+step 0 (random initialization) almost everything collapses into one dense
 blob, since the untrained aggregator weights don't yet separate structurally
 different nodes. Under t-SNE in particular, the cluster structure visible at
 the final step is already largely in place by step 200 -- three orders of

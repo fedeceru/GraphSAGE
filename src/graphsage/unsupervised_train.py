@@ -14,11 +14,27 @@ If ``--save_embeddings`` (default True), writes the learned embeddings for
 *every* node (train+val+test) to ``val.npy``/``val.txt`` in a run-specific
 directory under ``--base_log_dir`` (see ``log_dir()`` below); these are what
 ``scripts/eval_unsupervised.py`` later trains a classifier on.
+
+Every run also writes ``metrics.csv`` (step, epoch, train/val loss and MRR)
+into the same directory -- a structured counterpart to the console log,
+meant for programmatic plotting (e.g. notebook.ipynb's training-dynamics
+charts) without having to parse printed text. This is purely an added
+side-effect (like the existing TensorBoard summary writer below) and never
+changes what gets computed.
+
+Passing ``--embedding_snapshot_steps`` (default: empty, i.e. disabled)
+additionally dumps embeddings for every node at the given training steps --
+e.g. ``--embedding_snapshot_steps 0,100,1000,5000`` -- under
+``<log_dir>/snapshots/step_<N>/``, on top of the usual final embeddings.
+This is what notebook.ipynb's embedding-progression visuals (PCA/t-SNE
+across training) consume; with the flag left empty, a run behaves exactly
+like the original paper's script.
 """
 from __future__ import division
 from __future__ import print_function
 
 # stdlib
+import csv
 import os
 import time
 
@@ -68,6 +84,10 @@ flags.DEFINE_integer('identity_dim', 0, 'Set to positive value to use identity e
 
 #logging, saving, validation settings etc.
 flags.DEFINE_boolean('save_embeddings', True, 'whether to save embeddings for all nodes after training')
+flags.DEFINE_string('embedding_snapshot_steps', '',
+        "Comma-separated step indices at which to additionally dump embeddings for every "
+        "node during training (e.g. '0,100,1000,5000'), for visualizing how the embedding "
+        "space evolves. Empty (default) disables this and matches the original script exactly.")
 flags.DEFINE_string('base_log_dir', '.', 'base directory for logging and saving embeddings')
 flags.DEFINE_integer('validate_iter', 5000, "how often to run a validation minibatch.")
 flags.DEFINE_integer('validate_batch_size', 256, "how many nodes per validation sample.")
@@ -299,6 +319,27 @@ def train(train_data, test_data=None):
     # Init variables
     sess.run(tf.global_variables_initializer(), feed_dict={adj_info_ph: minibatch.adj})
 
+    # Structured, per-step counterpart to the console log below (step, epoch,
+    # train/val loss and MRR) -- written unconditionally, same spirit as the
+    # TensorBoard summary_writer above: an observational side effect that
+    # doesn't change what gets computed, meant for programmatic plotting
+    # (e.g. notebook.ipynb) without parsing printed text.
+    metrics_fp = open(os.path.join(log_dir(), "metrics.csv"), "w")
+    metrics_writer = csv.writer(metrics_fp)
+    metrics_writer.writerow(["step", "epoch", "train_loss", "train_mrr", "val_loss", "val_mrr"])
+
+    # ---- optional embedding snapshots (training-progression visuals) ------
+    # See --embedding_snapshot_steps above: empty by default, so none of this
+    # runs (and behavior is identical to the original script) unless opted in.
+    remaining_snapshots = sorted({int(s) for s in FLAGS.embedding_snapshot_steps.split(",") if s.strip() != ""})
+
+    def dump_embedding_snapshot(step, train_adj_info, val_adj_info):
+        sess.run(val_adj_info.op)
+        out_dir = os.path.join(log_dir(), "snapshots", "step_%05d" % step) + os.sep
+        save_val_embeddings(sess, model, minibatch, FLAGS.validate_batch_size, out_dir)
+        sess.run(train_adj_info.op)
+        print("Saved embedding snapshot at step %d -> %s" % (step, out_dir))
+
     # ---- training loop ----------------------------------------------------
     train_shadow_mrr = None
     shadow_mrr = None
@@ -309,6 +350,11 @@ def train(train_data, test_data=None):
 
     train_adj_info = tf.assign(adj_info, minibatch.adj)
     val_adj_info = tf.assign(adj_info, minibatch.test_adj)
+
+    if remaining_snapshots and remaining_snapshots[0] == 0:
+        dump_embedding_snapshot(0, train_adj_info, val_adj_info)
+        remaining_snapshots = remaining_snapshots[1:]
+
     for epoch in range(FLAGS.epochs):
         minibatch.shuffle() 
 
@@ -349,24 +395,36 @@ def train(train_data, test_data=None):
             avg_time = (avg_time * total_steps + time.time() - t) / (total_steps + 1)
 
             if total_steps % FLAGS.print_every == 0:
-                print("Iter:", '%04d' % iter, 
+                print("Iter:", '%04d' % iter,
                       "train_loss=", "{:.5f}".format(train_cost),
-                      "train_mrr=", "{:.5f}".format(train_mrr), 
+                      "train_mrr=", "{:.5f}".format(train_mrr),
                       "train_mrr_ema=", "{:.5f}".format(train_shadow_mrr), # exponential moving average
                       "val_loss=", "{:.5f}".format(val_cost),
-                      "val_mrr=", "{:.5f}".format(val_mrr), 
+                      "val_mrr=", "{:.5f}".format(val_mrr),
                       "val_mrr_ema=", "{:.5f}".format(shadow_mrr), # exponential moving average
                       "time=", "{:.5f}".format(avg_time))
+                metrics_writer.writerow([total_steps, epoch + 1, train_cost, train_mrr, val_cost, val_mrr])
 
             iter += 1
             total_steps += 1
+
+            while remaining_snapshots and total_steps >= remaining_snapshots[0]:
+                dump_embedding_snapshot(remaining_snapshots[0], train_adj_info, val_adj_info)
+                remaining_snapshots = remaining_snapshots[1:]
 
             if total_steps > FLAGS.max_total_steps:
                 break
 
         if total_steps > FLAGS.max_total_steps:
                 break
-    
+
+    metrics_fp.close()
+
+    if remaining_snapshots:
+        # requested a step beyond what one epoch actually covers -- snapshot
+        # wherever training ended so the sequence still has a "final" point
+        dump_embedding_snapshot(total_steps, train_adj_info, val_adj_info)
+
     print("Optimization Finished!")
     if FLAGS.save_embeddings:
         sess.run(val_adj_info.op)

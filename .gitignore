@@ -14,6 +14,11 @@ gcn_back
 *.bbl
 *.synctex.gz
 
+# Deliverables that would otherwise be caught by the broad patterns above
+!GraphSAGE.pdf
+!requirements.txt
+!results/*.png
+
 # Project env / data / experiment outputs
 .venv/
 data/
