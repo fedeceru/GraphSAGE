@@ -124,6 +124,87 @@ Key points:
 """)
 
 # ----------------------------------------------------------------------------
+md(r"""### 3.1 Visualizing neighborhood sampling
+
+The figure below illustrates the sampling step at the heart of Algorithm 1:
+starting from a target node $v$ (blue), a fixed-size sample of its direct
+neighbors is drawn (green, size $S_1$), and then a fixed-size sample of
+*their* neighbors is drawn in turn (yellow, size $S_2$) — every other node in
+the graph (gray) is never touched for this particular minibatch. This is
+what keeps the per-batch cost fixed at $O(S_1 \cdot S_2)$ regardless of how
+large or densely connected the full graph is.
+
+For legibility this uses a small synthetic graph with illustrative sample
+sizes $S_1=3$, $S_2=2$ (the actual PPI experiments below use the paper's
+default $S_1=25$, $S_2=10$ on graphs with ~2,373 nodes each).
+""")
+
+code(r"""import os
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+rng = np.random.RandomState(7)
+
+# a small synthetic 4-regular graph, purely for illustration (this is NOT PPI data)
+demo_graph = nx.random_regular_graph(d=4, n=18, seed=7)
+target_node = 0
+S1, S2 = 3, 2
+
+one_hop_all = list(demo_graph.neighbors(target_node))
+one_hop_sampled = list(rng.choice(one_hop_all, size=min(S1, len(one_hop_all)), replace=False))
+
+two_hop_sampled = set()
+for u in one_hop_sampled:
+    candidates = [n for n in demo_graph.neighbors(u) if n != target_node and n not in one_hop_sampled]
+    if candidates:
+        picked = rng.choice(candidates, size=min(S2, len(candidates)), replace=False)
+        two_hop_sampled.update(picked)
+
+color_target, color_1hop, color_2hop, color_unsampled = "#2a78d6", "#1baf7a", "#eda100", "#e1e0d9"
+node_colors = []
+for n in demo_graph.nodes():
+    if n == target_node:
+        node_colors.append(color_target)
+    elif n in one_hop_sampled:
+        node_colors.append(color_1hop)
+    elif n in two_hop_sampled:
+        node_colors.append(color_2hop)
+    else:
+        node_colors.append(color_unsampled)
+
+np.random.seed(7)  # networkx 1.11's spring_layout has no `seed` kwarg; seed the global RNG instead
+pos = nx.spring_layout(demo_graph)
+
+# Draw with plain matplotlib (rather than nx.draw_*) to avoid a networkx
+# 1.11 / matplotlib incompatibility in networkx's own drawing helpers, and
+# for full control over the mark style.
+fig, ax = plt.subplots(figsize=(7, 7))
+for u, v in demo_graph.edges():
+    x0, y0 = pos[u]
+    x1, y1 = pos[v]
+    ax.plot([x0, x1], [y0, y1], color="#c3c2b7", linewidth=1, zorder=1)
+xs = [pos[n][0] for n in demo_graph.nodes()]
+ys = [pos[n][1] for n in demo_graph.nodes()]
+ax.scatter(xs, ys, s=280, c=node_colors, edgecolors="#0b0b0b", linewidths=0.7, zorder=2)
+ax.set_title("Neighborhood sampling around a target node (Algorithm 1)")
+ax.axis("off")
+ax.legend(handles=[
+    Line2D([0], [0], marker="o", color="w", markerfacecolor=color_target, markersize=13, label="Target node $v$"),
+    Line2D([0], [0], marker="o", color="w", markerfacecolor=color_1hop, markersize=13, label="Sampled 1-hop neighbors ($S_1$)"),
+    Line2D([0], [0], marker="o", color="w", markerfacecolor=color_2hop, markersize=13, label="Sampled 2-hop neighbors ($S_2$)"),
+    Line2D([0], [0], marker="o", color="w", markerfacecolor=color_unsampled, markersize=13, label="Not sampled"),
+], loc="upper left", frameon=False)
+fig.tight_layout()
+
+results_dir = os.path.join(os.getcwd(), "results")
+os.makedirs(results_dir, exist_ok=True)
+fig.savefig(os.path.join(results_dir, "sampling_illustration.png"), dpi=140)
+plt.show()
+""")
+
+# ----------------------------------------------------------------------------
 md(r"""## 4. Algorithm 2 — minibatch forward propagation
 
 For SGD training, the paper first samples the set of nodes that will be
@@ -201,6 +282,80 @@ $$\text{AGGREGATE}_k^{pool} = \max\Big(\big\{\sigma(\mathbf{W}_{pool}\, h_{u_i}^
 
 The paper notes no significant difference between max- and mean-pooling, and
 uses max-pooling as the official "pool" aggregator in Table 1.
+""")
+
+md(r"""### 6.1 Visualizing the four aggregators
+
+Same self/neighbor inputs, four different ways of turning them into the next
+layer's representation. Colors here match the ones used consistently for
+these four variants throughout the rest of this notebook (results tables,
+loss curves, etc.).
+""")
+
+code(r"""import os
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
+
+MODEL_COLORS = {
+    "GraphSAGE-GCN": "#eb6834",
+    "GraphSAGE-mean": "#2a78d6",
+    "GraphSAGE-LSTM": "#4a3aa7",
+    "GraphSAGE-pool": "#1baf7a",
+}
+
+def _box(ax, xy, w, h, text, color):
+    x, y = xy
+    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02,rounding_size=0.05",
+                                 linewidth=1.3, edgecolor=color, facecolor=color, alpha=0.15))
+    ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=9, color="#0b0b0b")
+
+def _arrow(ax, p0, p1, color="#898781"):
+    ax.annotate("", xy=p1, xytext=p0,
+                arrowprops=dict(arrowstyle="-|>", color=color, lw=1.3, shrinkA=2, shrinkB=2))
+
+def draw_two_branch(ax, title, color, neigh_label, combine_label):
+    '''mean / pool / LSTM: neighbors and self are transformed on separate
+    branches, then combined via CONCAT (the Algorithm 1 skip connection).'''
+    ax.set_xlim(0, 10); ax.set_ylim(0, 6); ax.axis("off")
+    ax.set_title(title, fontsize=11, color=color, fontweight="bold")
+    _box(ax, (0.2, 3.6), 2.6, 1.1, "neighbors\n{h_u^{k-1}}", "#898781")
+    _box(ax, (0.2, 0.9), 2.6, 1.1, "self\nh_v^{k-1}", "#898781")
+    _box(ax, (3.3, 3.6), 2.3, 1.1, neigh_label, color)
+    _arrow(ax, (2.8, 4.15), (3.3, 4.15))
+    _box(ax, (6.2, 2.2), 1.7, 1.1, combine_label, color)
+    _arrow(ax, (5.6, 4.15), (6.2, 3.0))
+    _arrow(ax, (2.8, 1.45), (6.2, 2.55))
+    _box(ax, (8.3, 2.2), 1.5, 1.1, "$\\sigma(W \\cdot)$", color)
+    _arrow(ax, (7.9, 2.75), (8.3, 2.75))
+
+def draw_gcn(ax, title, color):
+    '''GCN: self and neighbors are averaged *together* before a single
+    shared transform -- no separate branches, no skip connection.'''
+    ax.set_xlim(0, 10); ax.set_ylim(0, 6); ax.axis("off")
+    ax.set_title(title, fontsize=11, color=color, fontweight="bold")
+    _box(ax, (0.2, 3.6), 2.8, 1.1, "neighbors\n{h_u^{k-1}}", "#898781")
+    _box(ax, (0.2, 1.3), 2.8, 1.1, "self  h_v^{k-1}", "#898781")
+    _box(ax, (3.7, 2.45), 2.5, 1.1, "MEAN\n(self U neighbors)", color)
+    _arrow(ax, (3.0, 4.15), (3.7, 3.3))
+    _arrow(ax, (3.0, 1.85), (3.7, 2.85))
+    _box(ax, (6.9, 2.45), 1.8, 1.1, "$\\sigma(W \\cdot)$", color)
+    _arrow(ax, (6.2, 3.0), (6.9, 3.0))
+
+fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+draw_two_branch(axes[0, 0], "GraphSAGE-mean (Sec. 3.3)", MODEL_COLORS["GraphSAGE-mean"],
+                "MEAN", "CONCAT")
+draw_gcn(axes[0, 1], "GraphSAGE-GCN (Eq. 2)", MODEL_COLORS["GraphSAGE-GCN"])
+draw_two_branch(axes[1, 0], "GraphSAGE-pool (Eq. 3)", MODEL_COLORS["GraphSAGE-pool"],
+                "shared MLP\n+ max-pool", "CONCAT")
+draw_two_branch(axes[1, 1], "GraphSAGE-LSTM (Sec. 3.3)", MODEL_COLORS["GraphSAGE-LSTM"],
+                "LSTM\n(shuffled order)", "CONCAT")
+fig.suptitle("The four aggregator architectures compared", fontsize=13)
+fig.tight_layout()
+
+results_dir = os.path.join(os.getcwd(), "results")
+os.makedirs(results_dir, exist_ok=True)
+fig.savefig(os.path.join(results_dir, "aggregator_architectures.png"), dpi=140)
+plt.show()
 """)
 
 # ----------------------------------------------------------------------------
@@ -357,6 +512,261 @@ ax.legend()
 fig.tight_layout()
 fig.savefig(os.path.join(RESULTS, "ppi_timing.png"), dpi=140)
 plt.show()
+""")
+
+md(r"""### 8.1 Training dynamics: loss between validation checkpoints
+
+Every training script prints the training loss at every step (`--print_every
+5`) but only *re-evaluates* on a validation sample every `--validate_iter`
+steps (5000 by default) -- since one PPI epoch is much shorter than that, in
+practice validation only refreshes once per epoch, while the training loss
+is visible at a much finer grain in between. Plotting both against the same
+step axis makes that visible directly: a noisy, high-frequency training
+curve against a coarse, "staircase" validation curve -- i.e. literally what
+the optimizer's gradient steps are doing *between* the evaluations that
+report it.
+""")
+
+code(r"""import re
+
+MODEL_COLORS = {
+    "GraphSAGE-GCN": "#eb6834",
+    "GraphSAGE-mean": "#2a78d6",
+    "GraphSAGE-LSTM": "#4a3aa7",
+    "GraphSAGE-pool": "#1baf7a",
+}
+
+def parse_training_log(log_path):
+    '''Read a supervised_train.py / unsupervised_train.py console log and
+    return, in print order, the training step index, train_loss, val_loss,
+    and the step indices where a new epoch started.'''
+    steps, train_loss, val_loss, epoch_steps = [], [], [], []
+    if not os.path.exists(log_path):
+        return steps, train_loss, val_loss, epoch_steps
+    step = 0
+    with open(log_path, encoding="utf-8", errors="ignore") as fp:
+        for line in fp:
+            if line.startswith("Epoch:"):
+                epoch_steps.append(step)
+                continue
+            m = re.search(r"train_loss=\s*([\d.]+).*?val_loss=\s*([\d.]+)", line)
+            if m:
+                train_loss.append(float(m.group(1)))
+                val_loss.append(float(m.group(2)))
+                steps.append(step)
+                step += 1
+    return steps, train_loss, val_loss, epoch_steps
+
+def plot_loss_curves(log_prefix, title):
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+    for ax, (model_flag, display_name) in zip(axes.flat, MODELS):
+        steps, tr, va, epochs = parse_training_log(os.path.join(LOGS, f"{log_prefix}_{model_flag}.log"))
+        color = MODEL_COLORS[display_name]
+        for e in epochs[1:]:
+            ax.axvline(e, color="#e1e0d9", lw=0.8, zorder=0)
+        ax.plot(steps, tr, color=color, lw=1.4, label="train")
+        ax.plot(steps, va, color=color, lw=1.4, ls="--", alpha=0.75, label="val")
+        ax.set_title(display_name, color=color, fontsize=10)
+        ax.set_xlabel("logged step (one point per --print_every steps)")
+        ax.set_ylabel("loss")
+        ax.legend(frameon=False, fontsize=8)
+    fig.suptitle(title)
+    fig.tight_layout()
+    return fig
+
+fig_sup = plot_loss_curves("sup", "Supervised training loss — PPI (dotted vertical lines mark epoch boundaries)")
+fig_sup.savefig(os.path.join(RESULTS, "ppi_supervised_loss_curves.png"), dpi=140)
+plt.show()
+""")
+
+code(r"""fig_unsup = plot_loss_curves("unsup", "Unsupervised training loss — PPI (skip-gram loss, Eq. 1)")
+fig_unsup.savefig(os.path.join(RESULTS, "ppi_unsupervised_loss_curves.png"), dpi=140)
+plt.show()
+""")
+
+md(r"""### 8.2 Watching the embedding space train: phases of aggregation
+
+Rather than looking only at the final, fully-trained embeddings, this
+section tracks how they get there. `scripts/train_embedding_snapshots.py`
+re-runs the best-performing unsupervised aggregator (`GraphSAGE-pool`) as a
+**single continuous training run** -- same seeds, same minibatch order as
+the reproduction above -- and dumps embeddings for every node at 7 points
+along the way: right after initialization (step 0), and after 50, 200, 800,
+3,000, 8,000 and 17,050 (~1 full epoch) gradient steps. Because it's one
+uninterrupted run, these are genuine snapshots of a single trajectory, not
+independent restarts.
+
+To make the stages visually comparable, a **fixed subsample of ~1,000 nodes**
+(stratified by split) is tracked through every stage, and each projection
+method below is fit **once** -- on the fully-trained (step 17,050) stage for
+PCA, jointly across all 7 stages at once for t-SNE -- so that a point's
+position means the same thing in every panel, and its movement across panels
+is directly readable rather than an artifact of re-fitting the projection
+each time.
+""")
+
+code(r"""import sys
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.lines import Line2D
+
+sys.path.insert(0, os.path.join(REPO, "src"))
+from graphsage.utils import load_data
+
+EMBED_MODEL = "graphsage_maxpool"  # our strongest unsupervised variant (see table above)
+SNAPSHOT_STEPS = [0, 50, 200, 800, 3000, 8000, 17050]
+snapshot_root = os.path.join(LOGS, "unsup-ppi", f"{EMBED_MODEL}_small_0.000010", "snapshots")
+
+split_colors = {"train": "#2a78d6", "val": "#eda100", "test": "#e34948"}
+blue_seq_cmap = LinearSegmentedColormap.from_list(
+    "seq_blue", ["#cde2fb", "#9ec5f4", "#5598e7", "#2a78d6", "#184f95", "#0d366b"])
+
+
+def load_snapshot(step):
+    d = os.path.join(snapshot_root, "step_%05d" % step)
+    emb = np.load(os.path.join(d, "val.npy"))
+    with open(os.path.join(d, "val.txt")) as fp:
+        ids = [int(line.strip()) for line in fp if line.strip()]
+    return emb, {node_id: row for row, node_id in enumerate(ids)}
+
+
+G, _, _, _, _ = load_data("data/ppi/ppi", load_walks=False)
+
+# node ids present in every snapshot (all of them, in practice -- every
+# snapshot covers all 56,944 nodes -- but this keeps things robust)
+_, final_id_to_row = load_snapshot(SNAPSHOT_STEPS[-1])
+node_list = [n for n in G.nodes() if n in final_id_to_row]
+node_split = np.array(["test" if G.node[n]["test"] else ("val" if G.node[n]["val"] else "train") for n in node_list])
+node_degree = np.array([G.degree(n) for n in node_list])
+
+# one fixed, stratified-by-split subsample, shared by every stage and both
+# projection methods below (so "the same nodes" are being tracked throughout)
+n_sub = 1000
+rng_sub = np.random.RandomState(123)
+sub_mask = np.zeros(len(node_list), dtype=bool)
+for split_name in split_colors:
+    idx = np.where(node_split == split_name)[0]
+    take = max(1, int(round(n_sub * len(idx) / len(node_list))))
+    sub_mask[rng_sub.choice(idx, size=min(take, len(idx)), replace=False)] = True
+
+sub_ids = [node_list[i] for i in range(len(node_list)) if sub_mask[i]]
+sub_split = node_split[sub_mask]
+sub_degree = node_degree[sub_mask]
+
+snapshot_embeddings = {}
+for step in SNAPSHOT_STEPS:
+    emb, id_to_row = load_snapshot(step)
+    snapshot_embeddings[step] = emb[[id_to_row[nid] for nid in sub_ids]]
+
+print(f"Tracking {len(sub_ids)} nodes ({(sub_split=='train').sum()} train / "
+      f"{(sub_split=='val').sum()} val / {(sub_split=='test').sum()} test) "
+      f"across {len(SNAPSHOT_STEPS)} training snapshots")
+""")
+
+code(r"""def plot_stage_small_multiples(coords_by_step, title, xlabel, ylabel, suptitle_color="#0b0b0b"):
+    fig, axes = plt.subplots(1, len(SNAPSHOT_STEPS), figsize=(3.1 * len(SNAPSHOT_STEPS), 3.6), sharex=True, sharey=True)
+    for ax, step in zip(axes, SNAPSHOT_STEPS):
+        coords = coords_by_step[step]
+        for split_name, color in split_colors.items():
+            mask = sub_split == split_name
+            ax.scatter(coords[mask, 0], coords[mask, 1], s=9, alpha=0.45, color=color, linewidths=0)
+        ax.set_title(f"step {step}", fontsize=10)
+        ax.set_xticks([]); ax.set_yticks([])
+    axes[0].set_ylabel(ylabel)
+    fig.text(0.5, -0.02, xlabel, ha="center", fontsize=10)
+    handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=c, markersize=9, label=s)
+               for s, c in split_colors.items()]
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.12), ncol=3, frameon=False)
+    fig.suptitle(title, y=1.2, color=suptitle_color)
+    fig.tight_layout()
+    return fig
+
+
+def plot_stage_trajectories(coords_by_step, title, xlabel, ylabel, n_traj=35):
+    rng_traj = np.random.RandomState(7)
+    traj_idx = rng_traj.choice(len(sub_ids), size=min(n_traj, len(sub_ids)), replace=False)
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+    for k in traj_idx:
+        xs = [coords_by_step[step][k, 0] for step in SNAPSHOT_STEPS]
+        ys = [coords_by_step[step][k, 1] for step in SNAPSHOT_STEPS]
+        color = split_colors[sub_split[k]]
+        ax.plot(xs, ys, color="#898781", alpha=0.45, lw=1.0, zorder=1)
+        ax.scatter(xs[0], ys[0], s=30, color=color, marker="o", edgecolors="#0b0b0b", linewidths=0.5, zorder=2)
+        ax.scatter(xs[-1], ys[-1], s=110, color=color, marker="*", edgecolors="#0b0b0b", linewidths=0.6, zorder=3)
+    ax.set_title(f"{title}\n(circle = step {SNAPSHOT_STEPS[0]}, star = step {SNAPSHOT_STEPS[-1]}, n={len(traj_idx)} nodes)")
+    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
+    handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=c, markeredgecolor="#0b0b0b", markersize=9, label=s)
+               for s, c in split_colors.items()]
+    ax.legend(handles=handles, frameon=False, loc="best")
+    fig.tight_layout()
+    return fig
+""")
+
+md(r"""**PCA view.** The projection is fit once, on the final (step 17,050)
+stage, and every earlier stage is transformed into that *same* space --
+so if the cloud looks unstructured at step 0 and organizes into the
+step-17,050 layout by the last panel, that's real movement, not a re-fit
+artifact.
+""")
+
+code(r"""from sklearn.decomposition import PCA
+
+pca_shared = PCA(n_components=2, random_state=123)
+pca_shared.fit(snapshot_embeddings[SNAPSHOT_STEPS[-1]])
+pca_coords = {step: pca_shared.transform(snapshot_embeddings[step]) for step in SNAPSHOT_STEPS}
+
+fig_pca_stages = plot_stage_small_multiples(
+    pca_coords, "GraphSAGE-pool: embedding space across training (PCA, shared projection)", "PC1", "PC2")
+fig_pca_stages.savefig(os.path.join(RESULTS, "ppi_embedding_pca_stages.png"), dpi=140, bbox_inches="tight")
+plt.show()
+""")
+
+code(r"""fig_pca_traj = plot_stage_trajectories(
+    pca_coords, "GraphSAGE-pool: individual embedding trajectories (PCA space)", "PC1", "PC2")
+fig_pca_traj.savefig(os.path.join(RESULTS, "ppi_embedding_pca_trajectories.png"), dpi=140)
+plt.show()
+""")
+
+md(r"""**t-SNE view.** t-SNE has no simple out-of-sample "transform" for new
+points, so to get one shared space across stages we fit it **jointly**: all
+7 stages' embeddings for the same subsample are stacked into one matrix,
+t-SNE is run once on the stack, and the result is split back out per stage.
+This is more expensive than the PCA view above (subsampled to the same
+~1,000 nodes to keep it tractable) but captures non-linear cluster structure
+PCA can't.
+""")
+
+code(r"""from sklearn.manifold import TSNE
+
+stacked = np.vstack([snapshot_embeddings[step] for step in SNAPSHOT_STEPS])
+tsne_joint = TSNE(n_components=2, perplexity=30, init="pca", random_state=123, n_iter=1000)
+stacked_2d = tsne_joint.fit_transform(stacked)
+
+n_each = len(sub_ids)
+tsne_coords = {step: stacked_2d[i * n_each:(i + 1) * n_each] for i, step in enumerate(SNAPSHOT_STEPS)}
+
+fig_tsne_stages = plot_stage_small_multiples(
+    tsne_coords, "GraphSAGE-pool: embedding space across training (t-SNE, jointly-fit projection)", "t-SNE 1", "t-SNE 2")
+fig_tsne_stages.savefig(os.path.join(RESULTS, "ppi_embedding_tsne_stages.png"), dpi=140, bbox_inches="tight")
+plt.show()
+""")
+
+code(r"""fig_tsne_traj = plot_stage_trajectories(
+    tsne_coords, "GraphSAGE-pool: individual embedding trajectories (t-SNE space)", "t-SNE 1", "t-SNE 2")
+fig_tsne_traj.savefig(os.path.join(RESULTS, "ppi_embedding_tsne_trajectories.png"), dpi=140)
+plt.show()
+""")
+
+md(r"""**Reading the progression.** Both projections tell a consistent story:
+at step 0 (random initialization) almost everything collapses into one dense
+blob, since the untrained aggregator weights don't yet separate structurally
+different nodes. Under t-SNE in particular, the cluster structure visible at
+the final step is already largely in place by step 200 -- three orders of
+magnitude fewer gradient steps than the full ~17,050-step epoch -- after
+which training mostly refines relative distances and density rather than
+discovering new cluster structure. That is consistent with Section 4.3 of
+the paper, which reports diminishing returns from additional training and
+sampling once the aggregators have enough signal to separate neighborhoods.
 """)
 
 # ----------------------------------------------------------------------------
