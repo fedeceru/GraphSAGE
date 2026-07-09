@@ -1,3 +1,19 @@
+"""
+Dataset loading and random-walk generation.
+
+A dataset is identified by a ``prefix`` (e.g. ``data/ppi/ppi``) and expected
+to provide four files: ``<prefix>-G.json`` (a networkx graph in
+node-link format, with a boolean ``val``/``test`` attribute on every node
+marking which split it belongs to), ``<prefix>-id_map.json`` (node id ->
+integer row index into the feature matrix), ``<prefix>-class_map.json`` (node
+id -> label, either a single class index or, for multi-label datasets like
+PPI, a list of 0/1 values), and optionally ``<prefix>-feats.npy`` (the
+feature matrix itself; if absent, the model falls back to identity/featureless
+mode).
+
+Pinned to ``networkx<=1.11`` because the graph API used here (``G.node[n]``,
+``G.neighbors(n)`` returning a list, etc.) changed in networkx 2.x.
+"""
 from __future__ import print_function
 
 import numpy as np
@@ -17,6 +33,24 @@ WALK_LEN=5
 N_WALKS=50
 
 def load_data(prefix, normalize=True, load_walks=False):
+    """Load a dataset given its file prefix.
+
+    Returns:
+        G: the networkx graph, with every node tagged 'val'/'test' (nodes
+           missing these attributes are dropped -- see the networkx-version
+           note below) and every edge tagged 'train_removed' (True if the
+           edge touches a val/test node; used by minibatch.py to build the
+           train-only adjacency table).
+        feats: [num_nodes, feat_dim] array, or None in featureless mode. If
+           `normalize`, features are standardized (zero mean/unit variance)
+           using statistics computed on the training nodes only.
+        id_map: dict, node id -> row index into `feats`.
+        walks: list of (node, context_node) pairs from `<prefix>-walks.txt`,
+           only populated if `load_walks=True` (used for the unsupervised
+           objective's positive pairs).
+        class_map: dict, node id -> label (int class index, or a list for
+           multi-label datasets).
+    """
     G_data = json.load(open(prefix + "-G.json"))
     G = json_graph.node_link_graph(G_data)
     if isinstance(G.nodes()[0], int):
@@ -51,6 +85,10 @@ def load_data(prefix, normalize=True, load_walks=False):
 
     ## Make sure the graph has edge train_removed annotations
     ## (some datasets might already have this..)
+    # An edge is "train_removed" if it touches a val/test node -- this is the
+    # flag minibatch.construct_adj() checks to build the train-only
+    # adjacency table, so training nodes never see val/test nodes through
+    # the graph structure.
     print("Loaded data.. now preprocessing..")
     for edge in G.edges():
         if (G.node[edge[0]]['val'] or G.node[edge[1]]['val'] or
@@ -75,6 +113,12 @@ def load_data(prefix, normalize=True, load_walks=False):
     return G, feats, id_map, walks, class_map
 
 def run_random_walks(G, nodes, num_walks=N_WALKS):
+    """Generate the (node, context_node) co-occurrence pairs used as
+    "positive" examples for the unsupervised loss (Eq. 1), by running
+    `num_walks` independent random walks of length `WALK_LEN` from every node
+    in `nodes` and pairing the start node with every node visited along the
+    way (self-pairs are skipped). Matches Appendix C: "we ran 50 random
+    walks of length 5 from each node"."""
     pairs = []
     for count, node in enumerate(nodes):
         if G.degree(node) == 0:

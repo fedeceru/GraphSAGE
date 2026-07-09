@@ -1,13 +1,32 @@
+"""
+Command-line entry point for supervised GraphSAGE: trains one of the
+aggregator variants (mean / GCN / LSTM / pooling) directly on a downstream
+node-classification task (cross-entropy loss), as opposed to
+``unsupervised_train.py``'s skip-gram objective.
+
+Typical usage (see also scripts/run_ppi_experiments.ps1 for a full example):
+
+    python -m graphsage.supervised_train \\
+        --train_prefix data/ppi/ppi --model graphsage_mean \\
+        --sigmoid true --gpu 0
+
+Writes ``val_stats.txt`` / ``test_stats.txt`` (loss + micro/macro F1) into a
+run-specific directory under ``--base_log_dir`` (see ``log_dir()`` below).
+"""
 from __future__ import division
 from __future__ import print_function
 
+# stdlib
 import os
 import time
+
+# third-party
 import tensorflow as tf
 import numpy as np
 import sklearn
 from sklearn import metrics
 
+# local
 from graphsage.supervised_models import SupervisedGraphsage
 from graphsage.models import SAGEInfo
 from graphsage.minibatch import NodeMinibatchIterator
@@ -61,6 +80,9 @@ os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.gpu)
 GPU_MEM_FRACTION = 0.8
 
 def calc_f1(y_true, y_pred):
+    """Micro/macro F1 between true and predicted labels. For multi-label
+    (sigmoid) datasets, predictions are thresholded at 0.5; for single-label
+    (softmax) datasets, the argmax class is taken."""
     if not FLAGS.sigmoid:
         y_true = np.argmax(y_true, axis=1)
         y_pred = np.argmax(y_pred, axis=1)
@@ -71,14 +93,22 @@ def calc_f1(y_true, y_pred):
 
 # Define model evaluation function
 def evaluate(sess, model, minibatch_iter, size=None):
+    """Quick evaluation on a random sample of `size` val (or test) nodes --
+    used for the periodic progress logging during training. See
+    `incremental_evaluate` below for the full, exhaustive evaluation used at
+    the end of training."""
     t_test = time.time()
     feed_dict_val, labels = minibatch_iter.node_val_feed_dict(size)
-    node_outs_val = sess.run([model.preds, model.loss], 
+    node_outs_val = sess.run([model.preds, model.loss],
                         feed_dict=feed_dict_val)
     mic, mac = calc_f1(labels, node_outs_val[0])
     return node_outs_val[1], mic, mac, (time.time() - t_test)
 
 def log_dir():
+    """Run-specific output directory, e.g.
+    ``<base_log_dir>/sup-ppi/graphsage_mean_small_0.0100/`` -- encodes the
+    dataset, model variant, model size and learning rate so different runs
+    never overwrite each other's logs/checkpoints."""
     log_dir = FLAGS.base_log_dir + "/sup-" + FLAGS.train_prefix.split("/")[-2]
     log_dir += "/{model:s}_{model_size:s}_{lr:0.4f}/".format(
             model=FLAGS.model,
@@ -89,6 +119,10 @@ def log_dir():
     return log_dir
 
 def incremental_evaluate(sess, model, minibatch_iter, size, test=False):
+    """Full evaluation over *all* val (or, if `test=True`, test) nodes,
+    processed in chunks of `size` so the whole split doesn't need to fit in
+    one feed_dict/batch. Used once at the end of training for the final
+    reported F1 scores (written to val_stats.txt / test_stats.txt)."""
     t_test = time.time()
     finished = False
     val_losses = []
@@ -110,6 +144,9 @@ def incremental_evaluate(sess, model, minibatch_iter, size, test=False):
     return np.mean(val_losses), f1_scores[0], f1_scores[1], (time.time() - t_test)
 
 def construct_placeholders(num_classes):
+    """TensorFlow input placeholders: `batch` holds the node ids for the
+    current minibatch, `labels` their target classes, fed at each training
+    step by `NodeMinibatchIterator.next_minibatch_feed_dict()`."""
     # Define placeholders
     placeholders = {
         'labels' : tf.placeholder(tf.float32, shape=(None, num_classes), name='labels'),
@@ -120,6 +157,9 @@ def construct_placeholders(num_classes):
     return placeholders
 
 def train(train_data, test_data=None):
+    """Build the model for `FLAGS.model` and run the full training loop
+    (FLAGS.epochs epochs over the training nodes), periodically evaluating on
+    a validation sample, then writing final val/test F1 scores to disk."""
 
     G = train_data[0]
     features = train_data[1]
@@ -144,9 +184,21 @@ def train(train_data, test_data=None):
             batch_size=FLAGS.batch_size,
             max_degree=FLAGS.max_degree, 
             context_pairs = context_pairs)
+    # `adj_info` is a tf.Variable (not a placeholder fed every step) holding
+    # the padded adjacency table built by the minibatch iterator, so it can
+    # be swapped between the train-only and full-graph versions with a
+    # single tf.assign -- see train_adj_info/val_adj_info below.
     adj_info_ph = tf.placeholder(tf.int32, shape=minibatch.adj.shape)
     adj_info = tf.Variable(adj_info_ph, trainable=False, name="adj_info")
 
+    # ---- model selection -----------------------------------------------
+    # Each branch builds the SAGEInfo list describing the K=2 (by default)
+    # recursive layers -- (sampler, num_samples, output_dim) per layer -- and
+    # instantiates SupervisedGraphsage with the matching aggregator_type.
+    # 'gcn' doubles the per-layer dims and disables concatenation because
+    # GCNAggregator (unlike the others) merges self+neighbor information via
+    # averaging rather than concatenation, so it needs a wider hidden size to
+    # match parameter count with the other variants (see paper Section 3.3).
     if FLAGS.model == 'graphsage_mean':
         # Create model
         sampler = UniformNeighborSampler(adj_info)
@@ -238,6 +290,7 @@ def train(train_data, test_data=None):
     else:
         raise Exception('Error: model name unrecognized.')
 
+    # ---- TF session setup ------------------------------------------------
     config = tf.ConfigProto(log_device_placement=FLAGS.log_device_placement)
     config.gpu_options.allow_growth = True
     #config.gpu_options.per_process_gpu_memory_fraction = GPU_MEM_FRACTION
@@ -250,16 +303,19 @@ def train(train_data, test_data=None):
      
     # Init variables
     sess.run(tf.global_variables_initializer(), feed_dict={adj_info_ph: minibatch.adj})
-    
-    # Train model
-    
+
+    # ---- training loop ----------------------------------------------------
     total_steps = 0
     avg_time = 0.0
     epoch_val_costs = []
 
+    # Ops that swap `adj_info` between the train-only and full-graph
+    # adjacency tables (see the comment above adj_info_ph). Training steps
+    # run under train_adj_info; validation steps briefly switch to
+    # val_adj_info and switch back afterwards.
     train_adj_info = tf.assign(adj_info, minibatch.adj)
     val_adj_info = tf.assign(adj_info, minibatch.test_adj)
-    for epoch in range(FLAGS.epochs): 
+    for epoch in range(FLAGS.epochs):
         minibatch.shuffle() 
 
         iter = 0
@@ -310,7 +366,8 @@ def train(train_data, test_data=None):
 
         if total_steps > FLAGS.max_total_steps:
                 break
-    
+
+    # ---- final evaluation --------------------------------------------------
     print("Optimization Finished!")
     sess.run(val_adj_info.op)
     val_cost, val_f1_mic, val_f1_mac, duration = incremental_evaluate(sess, model, minibatch, FLAGS.batch_size)

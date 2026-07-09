@@ -1,3 +1,33 @@
+"""
+The models in this file implement Algorithm 1 / Algorithm 2 of the paper (the
+"sample and aggregate" forward pass) plus the training objectives built on
+top of it.
+
+Class overview:
+- ``Model`` / ``GeneralizedModel``  -- thin base classes (forked from
+                                        tkipf/gcn) handling variable scoping,
+                                        save/load, and wiring up the
+                                        optimizer.
+- ``MLP``                           -- a plain 2-layer feature-only baseline
+                                        (not graph-aware), used for sanity
+                                        checks / ablations, not part of the
+                                        paper's reported models.
+- ``SampleAndAggregate``            -- the actual GraphSAGE model: its
+                                        ``sample`` + ``aggregate`` methods
+                                        together are Algorithm 2 (minibatch
+                                        forward propagation), and it is
+                                        trained with the unsupervised
+                                        skip-gram loss (Eq. 1). Subclassed by
+                                        ``SupervisedGraphsage`` in
+                                        ``supervised_models.py`` to swap in a
+                                        classification loss instead.
+- ``Node2VecModel``                 -- a DeepWalk/node2vec (p=q=1) baseline,
+                                        reimplemented in TensorFlow so its
+                                        runtime is directly comparable to
+                                        GraphSAGE (see Appendix C of the
+                                        paper, "Notes on the DeepWalk
+                                        implementation").
+"""
 from collections import namedtuple
 
 import tensorflow as tf
@@ -257,8 +287,18 @@ class SampleAndAggregate(GeneralizedModel):
         Args:
             inputs: batch inputs
             batch_size: the number of inputs (different for batch inputs and negative samples).
+
+        This is the sampling half of Algorithm 2 (minibatch pseudocode,
+        Appendix A): starting from the target `inputs` nodes, it walks
+        `layer_infos` in reverse (`t = len(layer_infos) - k - 1`) and, at
+        each step, samples that layer's neighbors for every node gathered so
+        far. `samples` therefore ends up as [target nodes, 1-hop neighbors,
+        2-hop neighbors, ...], and `support_sizes[i]` is how many i-hop
+        neighbors were sampled *per target node* (i.e. S_1, S_1*S_2, ... for
+        the K=2 default of S_1=25, S_2=10 -- see Appendix A's note on why
+        this indexing is "counterintuitive").
         """
-        
+
         if batch_size is None:
             batch_size = self.batch_size
         samples = [inputs]
@@ -290,6 +330,15 @@ class SampleAndAggregate(GeneralizedModel):
             batch_size: the number of inputs (different for batch inputs and negative samples).
         Returns:
             The hidden representation at the final layer for all nodes in batch
+
+        This is the aggregation half of Algorithm 2: it consumes the
+        `samples` produced by `sample()` above (ordered from target nodes out
+        to K-hop neighbors) and works *backwards* through them -- at
+        `layer=0` it aggregates the outermost (K-hop) neighbors into
+        (K-1)-hop representations, and so on, until only the target nodes'
+        final-layer representations (`hidden[0]`) remain. This mirrors lines
+        9-15 of Algorithm 2, i.e. h_v^k for k = 1..K in the main text's
+        Algorithm 1.
         """
 
         if batch_size is None:
@@ -297,6 +346,10 @@ class SampleAndAggregate(GeneralizedModel):
 
         # length: number of layers + 1
         hidden = [tf.nn.embedding_lookup(input_features, node_samples) for node_samples in samples]
+        # `aggregators` is None on the first call (e.g. for the "batch1"
+        # nodes): build one aggregator per layer and cache it, so the *same*
+        # weights get reused for "batch2" and the negative samples too
+        # (they must share weights to produce comparable embeddings).
         new_agg = aggregators is None
         if new_agg:
             aggregators = []
@@ -319,10 +372,18 @@ class SampleAndAggregate(GeneralizedModel):
             next_hidden = []
             # as layer increases, the number of support nodes needed decreases
             for hop in range(len(num_samples) - layer):
+                # dim_mult accounts for the fact that once concat=True has
+                # doubled a representation's width (self ++ neighbor), every
+                # subsequent layer must treat that as its real input width
                 dim_mult = 2 if concat and (layer != 0) else 1
-                neigh_dims = [batch_size * support_sizes[hop], 
-                              num_samples[len(num_samples) - hop - 1], 
+                neigh_dims = [batch_size * support_sizes[hop],
+                              num_samples[len(num_samples) - hop - 1],
                               dim_mult*dims[layer]]
+                # hidden[hop] = self vectors, hidden[hop+1] reshaped = their
+                # sampled neighbors' vectors -- exactly the AGGREGATE_k call
+                # in line 4 of Algorithm 1, applied to every "hop" batch at
+                # once (this is what makes the minibatch approach efficient:
+                # one aggregator call covers many nodes' worth of Algorithm 1).
                 h = aggregator((hidden[hop],
                                 tf.reshape(hidden[hop + 1], neigh_dims)))
                 next_hidden.append(h)
@@ -330,6 +391,9 @@ class SampleAndAggregate(GeneralizedModel):
         return hidden[0], aggregators
 
     def _build(self):
+        # negative samples for the unsupervised loss (Eq. 1): drawn from a
+        # unigram distribution over node degree with distortion 0.75,
+        # following word2vec/DeepWalk convention (see Appendix C)
         labels = tf.reshape(
                 tf.cast(self.placeholders['batch2'], dtype=tf.int64),
                 [self.batch_size, 1])
@@ -342,8 +406,13 @@ class SampleAndAggregate(GeneralizedModel):
             distortion=0.75,
             unigrams=self.degrees.tolist()))
 
-           
+
         # perform "convolution"
+        # outputs1 = z_u (embeddings for the anchor/"batch1" nodes)
+        # outputs2 = z_v (embeddings for their positive/context "batch2" nodes)
+        # neg_outputs = z_{v_n} (embeddings for the sampled negatives)
+        # All three share the same aggregators (built once for outputs1, then
+        # reused) so the embeddings all live in the same learned space.
         samples1, support_sizes1 = self.sample(self.inputs1, self.layer_infos)
         samples2, support_sizes2 = self.sample(self.inputs2, self.layer_infos)
         num_samples = [layer_info.num_samples for layer_info in self.layer_infos]
@@ -365,6 +434,7 @@ class SampleAndAggregate(GeneralizedModel):
                 bilinear_weights=False,
                 name='edge_predict')
 
+        # line 7 of Algorithm 1: normalize every embedding to unit L2 norm
         self.outputs1 = tf.nn.l2_normalize(self.outputs1, 1)
         self.outputs2 = tf.nn.l2_normalize(self.outputs2, 1)
         self.neg_outputs = tf.nn.l2_normalize(self.neg_outputs, 1)
@@ -376,27 +446,40 @@ class SampleAndAggregate(GeneralizedModel):
         self._loss()
         self._accuracy()
         self.loss = self.loss / tf.cast(self.batch_size, tf.float32)
+        # gradient clipping (to [-5, 5]) avoids occasional loss spikes from
+        # destabilizing training, standard practice for word2vec-style
+        # negative-sampling losses
         grads_and_vars = self.optimizer.compute_gradients(self.loss)
-        clipped_grads_and_vars = [(tf.clip_by_value(grad, -5.0, 5.0) if grad is not None else None, var) 
+        clipped_grads_and_vars = [(tf.clip_by_value(grad, -5.0, 5.0) if grad is not None else None, var)
                 for grad, var in grads_and_vars]
         self.grad, _ = clipped_grads_and_vars[0]
         self.opt_op = self.optimizer.apply_gradients(clipped_grads_and_vars)
 
     def _loss(self):
+        """Unsupervised loss: L2 weight decay on every aggregator's
+        parameters, plus the skip-gram-style link-prediction loss (Eq. 1 of
+        the paper) computed by ``self.link_pred_layer`` from
+        (outputs1, outputs2, neg_outputs)."""
         for aggregator in self.aggregators:
             for var in aggregator.vars.values():
                 self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
 
-        self.loss += self.link_pred_layer.loss(self.outputs1, self.outputs2, self.neg_outputs) 
+        self.loss += self.link_pred_layer.loss(self.outputs1, self.outputs2, self.neg_outputs)
         tf.summary.scalar('loss', self.loss)
 
     def _accuracy(self):
+        """Mean Reciprocal Rank (MRR) of the true context node's affinity
+        among the negative samples' affinities -- used only as a training
+        diagnostic (printed/logged every ``--print_every`` steps), not part
+        of the loss."""
         # shape: [batch_size]
         aff = self.link_pred_layer.affinity(self.outputs1, self.outputs2)
         # shape : [batch_size x num_neg_samples]
         self.neg_aff = self.link_pred_layer.neg_cost(self.outputs1, self.neg_outputs)
         self.neg_aff = tf.reshape(self.neg_aff, [self.batch_size, FLAGS.neg_sample_size])
         _aff = tf.expand_dims(aff, axis=1)
+        # rank of the true pair's affinity among [negatives..., true] (higher
+        # affinity => lower/better rank), then MRR = mean(1 / rank)
         self.aff_all = tf.concat(axis=1, values=[self.neg_aff, _aff])
         size = tf.shape(self.aff_all)[1]
         _, indices_of_ranks = tf.nn.top_k(self.aff_all, k=size)

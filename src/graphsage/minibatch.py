@@ -1,3 +1,37 @@
+"""
+Turns a networkx graph into the minibatches (batches of node/edge ids, plus a
+padded dense adjacency table) that the models in ``models.py`` /
+``supervised_models.py`` consume through their TensorFlow placeholders.
+
+Both iterators below share the same core trick, ``construct_adj``: rather than
+storing each node's variable-length neighbor list, they build a dense
+``[num_nodes + 1, max_degree]`` int array where row ``i`` is node ``i``'s
+neighbor ids, downsampled (if degree > max_degree) or upsampled with
+replacement (if degree < max_degree) to exactly ``max_degree`` entries. Row
+index ``num_nodes`` is a reserved "dummy" neighbor id used to pad batches (see
+``supervised_train.py`` / ``unsupervised_train.py``, where the feature matrix
+is padded with one extra all-zero row at that same index). This fixed-width
+layout is what lets ``neigh_samplers.UniformNeighborSampler`` sample
+neighborhoods with a single ``tf.nn.embedding_lookup`` instead of a
+variable-length gather.
+
+Two separate adjacency tables are built per iterator:
+- ``self.adj``      -- edges between training nodes only (used during
+                        training, so a node can never "see" a val/test node
+                        through the graph structure).
+- ``self.test_adj``  -- the full graph, used at evaluation time so val/test
+                        nodes can aggregate over their real neighborhoods.
+Training scripts swap between the two via a `tf.assign` on the ``adj_info``
+variable (see ``train_adj_info`` / ``val_adj_info`` in the *_train.py files).
+
+- ``EdgeMinibatchIterator``: yields batches of (node, context-node) edge
+  pairs for the **unsupervised** skip-gram-style objective (Eq. 1 of the
+  paper). "Context" pairs normally come from random walks (see
+  ``utils.run_random_walks``); falling back to direct graph edges is also
+  supported.
+- ``NodeMinibatchIterator``: yields batches of individual nodes (+ their
+  labels) for the **supervised** classification objective.
+"""
 from __future__ import division
 from __future__ import print_function
 
@@ -6,7 +40,7 @@ import numpy as np
 np.random.seed(123)
 
 class EdgeMinibatchIterator(object):
-    
+
     """ This minibatch iterator iterates over batches of sampled edges or
     random pairs of co-occuring edges.
 
@@ -74,18 +108,30 @@ class EdgeMinibatchIterator(object):
         return new_edge_list
 
     def construct_adj(self):
+        """Build the padded [num_nodes+1, max_degree] adjacency table used
+        during *training*: skips val/test nodes entirely (row stays all
+        "dummy"), and skips edges flagged `train_removed` (i.e. edges
+        touching a val/test node), so a training node's neighborhood never
+        leaks information from val/test nodes. Also returns each node's true
+        (pre-padding) degree, used later for the negative-sampling
+        distribution."""
+        # every row starts out filled with the "dummy" neighbor id (index
+        # len(id2idx), which is the padding row appended to the feature
+        # matrix by the training scripts)
         adj = len(self.id2idx)*np.ones((len(self.id2idx)+1, self.max_degree))
         deg = np.zeros((len(self.id2idx),))
 
         for nodeid in self.G.nodes():
             if self.G.node[nodeid]['test'] or self.G.node[nodeid]['val']:
                 continue
-            neighbors = np.array([self.id2idx[neighbor] 
+            neighbors = np.array([self.id2idx[neighbor]
                 for neighbor in self.G.neighbors(nodeid)
                 if (not self.G[nodeid][neighbor]['train_removed'])])
             deg[self.id2idx[nodeid]] = len(neighbors)
             if len(neighbors) == 0:
                 continue
+            # downsample (no replacement) or upsample (with replacement) to
+            # exactly max_degree entries, so every row has fixed width
             if len(neighbors) > self.max_degree:
                 neighbors = np.random.choice(neighbors, self.max_degree, replace=False)
             elif len(neighbors) < self.max_degree:
@@ -94,9 +140,12 @@ class EdgeMinibatchIterator(object):
         return adj, deg
 
     def construct_test_adj(self):
+        """Same as construct_adj, but over the *full* graph (all nodes,
+        all edges) -- used at evaluation time so val/test nodes aggregate
+        over their real neighbors, including other val/test nodes."""
         adj = len(self.id2idx)*np.ones((len(self.id2idx)+1, self.max_degree))
         for nodeid in self.G.nodes():
-            neighbors = np.array([self.id2idx[neighbor] 
+            neighbors = np.array([self.id2idx[neighbor]
                 for neighbor in self.G.neighbors(nodeid)])
             if len(neighbors) == 0:
                 continue
@@ -108,6 +157,7 @@ class EdgeMinibatchIterator(object):
         return adj
 
     def end(self):
+        """True once every training edge has been consumed for this epoch."""
         return self.batch_num * self.batch_size >= len(self.train_edges)
 
     def batch_feed_dict(self, batch_edges):
@@ -176,8 +226,8 @@ class EdgeMinibatchIterator(object):
         self.batch_num = 0
 
 class NodeMinibatchIterator(object):
-    
-    """ 
+
+    """
     This minibatch iterator iterates over nodes for supervised learning.
 
     G -- networkx graph
@@ -187,6 +237,12 @@ class NodeMinibatchIterator(object):
     num_classes -- number of output classes
     batch_size -- size of the minibatches
     max_degree -- maximum size of the downsampled adjacency lists
+
+    Structurally this mirrors EdgeMinibatchIterator above (same padded
+    adjacency scheme via construct_adj/construct_test_adj), but batches are
+    individual (node, label) pairs instead of (node, context-node) edges,
+    since the objective here is direct classification rather than the
+    unsupervised skip-gram loss.
     """
     def __init__(self, G, id2idx, 
             placeholders, label_map, num_classes, 
@@ -215,6 +271,11 @@ class NodeMinibatchIterator(object):
         self.train_nodes = [n for n in self.train_nodes if self.deg[id2idx[n]] > 0]
 
     def _make_label_vec(self, node):
+        """Convert a node's label into a fixed-length one-hot/multi-hot
+        vector: if the label is already a list (multi-label datasets like
+        PPI, where a node can belong to several classes at once), it's used
+        as-is; otherwise it's treated as a single class index and one-hot
+        encoded."""
         label = self.label_map[node]
         if isinstance(label, list):
             label_vec = np.array(label)

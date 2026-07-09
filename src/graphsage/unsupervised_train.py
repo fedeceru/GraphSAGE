@@ -1,11 +1,32 @@
+"""
+Command-line entry point for unsupervised GraphSAGE: trains one of the
+aggregator variants (mean / GCN / LSTM / pooling), or the Node2Vec/DeepWalk
+baseline (``--model n2v``), on the skip-gram-style link-prediction objective
+of Eq. 1 in the paper -- as opposed to ``supervised_train.py``'s direct
+classification loss.
+
+Typical usage (see also scripts/run_ppi_experiments.ps1 for a full example):
+
+    python -m graphsage.unsupervised_train \\
+        --train_prefix data/ppi/ppi --model graphsage_mean --gpu 0
+
+If ``--save_embeddings`` (default True), writes the learned embeddings for
+*every* node (train+val+test) to ``val.npy``/``val.txt`` in a run-specific
+directory under ``--base_log_dir`` (see ``log_dir()`` below); these are what
+``scripts/eval_unsupervised.py`` later trains a classifier on.
+"""
 from __future__ import division
 from __future__ import print_function
 
+# stdlib
 import os
 import time
+
+# third-party
 import tensorflow as tf
 import numpy as np
 
+# local
 from graphsage.models import SampleAndAggregate, SAGEInfo, Node2VecModel
 from graphsage.minibatch import EdgeMinibatchIterator
 from graphsage.neigh_samplers import UniformNeighborSampler
@@ -59,6 +80,9 @@ os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.gpu)
 GPU_MEM_FRACTION = 0.8
 
 def log_dir():
+    """Run-specific output directory, e.g.
+    ``<base_log_dir>/unsup-ppi/graphsage_mean_small_0.000010/`` -- this is
+    also where the final embeddings (val.npy/val.txt) get written."""
     log_dir = FLAGS.base_log_dir + "/unsup-" + FLAGS.train_prefix.split("/")[-2]
     log_dir += "/{model:s}_{model_size:s}_{lr:0.6f}/".format(
             model=FLAGS.model,
@@ -70,13 +94,17 @@ def log_dir():
 
 # Define model evaluation function
 def evaluate(sess, model, minibatch_iter, size=None):
+    """Quick MRR/loss evaluation on a random sample of `size` val edges --
+    used for the periodic progress logging during training."""
     t_test = time.time()
     feed_dict_val = minibatch_iter.val_feed_dict(size)
-    outs_val = sess.run([model.loss, model.ranks, model.mrr], 
+    outs_val = sess.run([model.loss, model.ranks, model.mrr],
                         feed_dict=feed_dict_val)
     return outs_val[0], outs_val[1], outs_val[2], (time.time() - t_test)
 
 def incremental_evaluate(sess, model, minibatch_iter, size):
+    """Full MRR/loss evaluation over *all* val edges, processed in chunks of
+    `size` (analogous to supervised_train.incremental_evaluate)."""
     t_test = time.time()
     finished = False
     val_losses = []
@@ -92,6 +120,13 @@ def incremental_evaluate(sess, model, minibatch_iter, size):
     return np.mean(val_losses), np.mean(val_mrrs), (time.time() - t_test)
 
 def save_val_embeddings(sess, model, minibatch_iter, size, out_dir, mod=""):
+    """Run the trained model in inference mode over *every* node in the
+    graph (train+val+test, via `incremental_embed_feed_dict`, which uses the
+    full-graph adjacency) and dump the resulting embeddings to
+    `<out_dir>/val<mod>.npy` (float matrix) with the corresponding node ids
+    in `<out_dir>/val<mod>.txt` (one id per line, same row order). This is
+    the file pair that `scripts/eval_unsupervised.py` later reads to train a
+    downstream classifier on top of the embeddings."""
     val_embeddings = []
     finished = False
     seen = set([])
@@ -117,6 +152,11 @@ def save_val_embeddings(sess, model, minibatch_iter, size, out_dir, mod=""):
         fp.write("\n".join(map(str,nodes)))
 
 def construct_placeholders():
+    """TensorFlow input placeholders: `batch1`/`batch2` hold the anchor and
+    positive-context node ids for the current minibatch of edges (fed by
+    `EdgeMinibatchIterator.next_minibatch_feed_dict()`); negative samples are
+    drawn inside the graph itself (see `SampleAndAggregate._build` in
+    models.py), not fed here."""
     # Define placeholders
     placeholders = {
         'batch1' : tf.placeholder(tf.int32, shape=(None), name='batch1'),
@@ -130,6 +170,10 @@ def construct_placeholders():
     return placeholders
 
 def train(train_data, test_data=None):
+    """Build the model for `FLAGS.model` and run the full training loop
+    (FLAGS.epochs epochs over the training edges/random-walk pairs),
+    periodically evaluating MRR on a validation sample, then -- unless
+    disabled -- saving embeddings for every node."""
     G = train_data[0]
     features = train_data[1]
     id_map = train_data[2]
@@ -146,9 +190,13 @@ def train(train_data, test_data=None):
             max_degree=FLAGS.max_degree, 
             num_neg_samples=FLAGS.neg_sample_size,
             context_pairs = context_pairs)
+    # See the matching comment in supervised_train.py: `adj_info` is a
+    # tf.Variable so it can be swapped between train-only / full-graph
+    # adjacency without rebuilding the graph.
     adj_info_ph = tf.placeholder(tf.int32, shape=minibatch.adj.shape)
     adj_info = tf.Variable(adj_info_ph, trainable=False, name="adj_info")
 
+    # ---- model selection -----------------------------------------------
     if FLAGS.model == 'graphsage_mean':
         # Create model
         sampler = UniformNeighborSampler(adj_info)
@@ -225,6 +273,10 @@ def train(train_data, test_data=None):
                                      logging=True)
 
     elif FLAGS.model == 'n2v':
+        # DeepWalk/node2vec (p=q=1) baseline, reimplemented in TensorFlow so
+        # its runtime is directly comparable to GraphSAGE (Appendix C);
+        # doesn't use sample()/aggregate() at all, just a plain embedding
+        # lookup table.
         model = Node2VecModel(placeholders, features.shape[0],
                                        minibatch.deg,
                                        #2x because graphsage uses concat
@@ -233,6 +285,7 @@ def train(train_data, test_data=None):
     else:
         raise Exception('Error: model name unrecognized.')
 
+    # ---- TF session setup ------------------------------------------------
     config = tf.ConfigProto(log_device_placement=FLAGS.log_device_placement)
     config.gpu_options.allow_growth = True
     #config.gpu_options.per_process_gpu_memory_fraction = GPU_MEM_FRACTION
@@ -245,9 +298,8 @@ def train(train_data, test_data=None):
      
     # Init variables
     sess.run(tf.global_variables_initializer(), feed_dict={adj_info_ph: minibatch.adj})
-    
-    # Train model
-    
+
+    # ---- training loop ----------------------------------------------------
     train_shadow_mrr = None
     shadow_mrr = None
 
@@ -257,7 +309,7 @@ def train(train_data, test_data=None):
 
     train_adj_info = tf.assign(adj_info, minibatch.adj)
     val_adj_info = tf.assign(adj_info, minibatch.test_adj)
-    for epoch in range(FLAGS.epochs): 
+    for epoch in range(FLAGS.epochs):
         minibatch.shuffle() 
 
         iter = 0
@@ -322,6 +374,16 @@ def train(train_data, test_data=None):
         save_val_embeddings(sess, model, minibatch, FLAGS.validate_batch_size, log_dir())
 
         if FLAGS.model == "n2v":
+            # DeepWalk/node2vec has no inductive mechanism: embeddings are
+            # looked up by id, so a never-seen node simply has no embedding.
+            # To let it "handle" test-time nodes at all (Appendix C, "Notes
+            # on the DeepWalk implementation"), we now run a *second* round
+            # of training restricted to fresh random walks touching val/test
+            # nodes, while freezing (stop_gradient) the embeddings of nodes
+            # already optimized above -- otherwise this second round would
+            # keep drifting the training embeddings the classifier was
+            # already fit on. This whole block is specific to the n2v
+            # baseline and doesn't run for any GraphSAGE variant.
             # stopping the gradient for the already trained nodes
             train_ids = tf.constant([[id_map[n]] for n in G.nodes_iter() if not G.node[n]['val'] and not G.node[n]['test']],
                     dtype=tf.int32)

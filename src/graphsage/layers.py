@@ -1,3 +1,10 @@
+"""
+Minimal Keras-style ``Layer`` base class (variable scoping, optional
+TensorBoard histogram logging) plus a plain ``Dense`` layer. Every learnable
+building block in this codebase -- aggregators, the neighbor sampler, the
+link-prediction layer -- subclasses ``Layer`` so that they all get a unique
+name/variable scope for free.
+"""
 from __future__ import division
 from __future__ import print_function
 
@@ -13,7 +20,9 @@ FLAGS = flags.FLAGS
 # https://github.com/tkipf/gcn
 # which itself was very inspired by the keras package
 
-# global unique layer ID dictionary for layer name assignment
+# Global unique layer ID dictionary, used to auto-generate a distinct name
+# (e.g. "dense_1", "dense_2", ...) for every Layer instance that doesn't get
+# an explicit `name=` kwarg.
 _LAYER_UIDS = {}
 
 def get_layer_uid(layer_name=''):
@@ -71,9 +80,14 @@ class Layer(object):
 
 
 class Dense(Layer):
-    """Dense layer."""
-    def __init__(self, input_dim, output_dim, dropout=0., 
-                 act=tf.nn.relu, placeholders=None, bias=True, featureless=False, 
+    """Standard fully-connected layer: ``act(dropout(x) @ W + b)``.
+
+    Used both as a plain classifier head (``MLP`` in ``models.py``,
+    ``SupervisedGraphsage.node_pred`` in ``supervised_models.py``) and as the
+    per-neighbor MLP inside the pooling aggregators in ``aggregators.py``.
+    """
+    def __init__(self, input_dim, output_dim, dropout=0.,
+                 act=tf.nn.relu, placeholders=None, bias=True, featureless=False,
                  sparse_inputs=False, **kwargs):
         super(Dense, self).__init__(**kwargs)
 
@@ -104,6 +118,8 @@ class Dense(Layer):
     def _call(self, inputs):
         x = inputs
 
+        # note: `1 - self.dropout` is the *keep* probability expected by
+        # tf.nn.dropout, so self.dropout=0 (the default) means "no dropout"
         x = tf.nn.dropout(x, 1-self.dropout)
 
         # transform

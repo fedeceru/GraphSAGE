@@ -1,16 +1,16 @@
 """
-Baseline "Random" e "Raw features" per il dataset PPI, come descritti nel paper
-GraphSAGE (Section 4, "Experimental set-up", e Appendix C).
+"Random" and "Raw features" baselines for the PPI dataset, as described in the
+GraphSAGE paper (Section 4, "Experimental set-up", and Appendix C).
 
-- Random: per ciascuna delle 121 label GO, predizione Bernoulli indipendente con
-  probabilita' pari al tasso di positivi osservato nel training set.
-- Raw features: OneVsRestClassifier(SGDClassifier(loss="log")) -- la "logistic
-  SGDClassifier... con impostazioni di default" descritta in Appendix C -- allenato
-  sulle feature grezze dei nodi di training, valutato sui nodi di test.
+- Random: for each of the 121 GO labels, an independent Bernoulli prediction
+  with probability equal to the positive rate observed on the training set.
+- Raw features: OneVsRestClassifier(SGDClassifier(loss="log")) -- the "logistic
+  SGDClassifier... with default settings" described in Appendix C -- trained
+  on the raw features of the training nodes, evaluated on the test nodes.
 
-Non modifica src/graphsage: riusa solo graphsage.utils.load_data per caricare
-il dataset con lo stesso preprocessing (StandardScaler fit sul train) usato
-dai training script ufficiali.
+Does not modify src/graphsage: it only reuses graphsage.utils.load_data to
+load the dataset with the same preprocessing (StandardScaler fit on train)
+used by the official training scripts.
 """
 from __future__ import division, print_function
 
@@ -75,7 +75,7 @@ def main():
 
     print("Loading PPI data...")
     G, feats, id_map, _, class_map = load_data(args.train_prefix, load_walks=False)
-    # stessa gestione del nodo "dummy" usata dai training script (padding zero vec)
+    # same "dummy" node handling used by the training scripts (zero-vector padding)
     feats = np.vstack([feats, np.zeros((feats.shape[1],))])
 
     X_train, y_train, X_test, y_test = get_split_labels(G, id_map, class_map, feats)

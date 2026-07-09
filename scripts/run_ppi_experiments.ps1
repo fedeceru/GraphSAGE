@@ -1,6 +1,6 @@
-# Orchestrazione della riproduzione GraphSAGE su PPI:
-# baseline (Random, Raw features) + 4 aggregatori x {supervised, unsupervised},
-# run singola per variante con gli iperparametri di default del codice originale.
+# Orchestrates the GraphSAGE reproduction on PPI:
+# baselines (Random, Raw features) + 4 aggregators x {supervised, unsupervised},
+# a single run per variant with the original code's default hyperparameters.
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -53,5 +53,8 @@ foreach ($m in $models) {
 
 Write-Host "=== Compiling results table ===" -ForegroundColor Cyan
 & $python scripts\compile_results.py 2>&1 | Tee-Object -FilePath "logs\compile_results.log"
+
+Write-Host "=== Executing notebook.ipynb ===" -ForegroundColor Cyan
+& $python -m nbconvert --to notebook --execute --inplace notebook.ipynb 2>&1 | Tee-Object -FilePath "logs\notebook_execute.log"
 
 Write-Host "DONE" -ForegroundColor Green

@@ -1,13 +1,13 @@
 """
-Valutazione degli embedding non supervisionati di GraphSAGE su PPI, seguendo
-la procedura descritta in Appendix C del paper ("Logistic regression model"):
-si allena una logistic SGDClassifier di scikit-learn (impostazioni di default)
-solo sui nodi di training, e la si valuta sui nodi di test -- senza alcun
-fine-tuning sugli embedding generati per i nodi di test.
+Evaluation of GraphSAGE's unsupervised embeddings on PPI, following the
+procedure described in Appendix C of the paper ("Logistic regression model"):
+a scikit-learn logistic SGDClassifier (default settings) is trained only on
+the training nodes, and evaluated on the test nodes -- with no fine-tuning on
+the embeddings generated for the test nodes.
 
-Consuma l'output di `graphsage.unsupervised_train` (che salva `val.npy` /
-`val.txt` nella log dir, contenenti gli embedding e gli id di TUTTI i nodi,
-train+val+test) e non modifica src/graphsage.
+Consumes the output of `graphsage.unsupervised_train` (which saves `val.npy` /
+`val.txt` in the log dir, containing the embeddings and ids of ALL nodes,
+train+val+test) and does not modify src/graphsage.
 """
 from __future__ import division, print_function
 
@@ -31,7 +31,7 @@ def load_embeddings(embed_dir):
     emb = np.load(os.path.join(embed_dir, "val.npy"))
     with open(os.path.join(embed_dir, "val.txt")) as fp:
         ids = [line.strip() for line in fp if line.strip() != ""]
-    # gli id dei nodi di PPI sono interi (json numeric keys -> letti come int in load_data)
+    # PPI node ids are integers (json numeric keys -> read as int in load_data)
     ids = [int(i) for i in ids]
     return emb, ids
 
@@ -40,7 +40,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_prefix", default="data/ppi/ppi")
     parser.add_argument("--embed_dir", required=True,
-                         help="cartella con val.npy/val.txt prodotta da unsupervised_train.py")
+                         help="folder with val.npy/val.txt produced by unsupervised_train.py")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 

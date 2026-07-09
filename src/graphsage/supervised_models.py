@@ -1,3 +1,9 @@
+"""
+The supervised counterpart of ``models.SampleAndAggregate``: reuses the exact
+same ``sample``/``aggregate`` machinery (Algorithm 1/2) to produce node
+embeddings, but instead of the unsupervised skip-gram loss trains directly on
+a downstream classification task (Section 3.2, "task-specific objective").
+"""
 import tensorflow as tf
 
 import graphsage.models as models
@@ -76,37 +82,49 @@ class SupervisedGraphsage(models.SampleAndAggregate):
 
 
     def build(self):
+        # Only one set of "target" nodes here (self.inputs1) -- unlike the
+        # unsupervised model there's no positive/negative pair, just nodes
+        # to classify -- so a single sample()+aggregate() call is enough to
+        # get every node's final-layer embedding.
         samples1, support_sizes1 = self.sample(self.inputs1, self.layer_infos)
         num_samples = [layer_info.num_samples for layer_info in self.layer_infos]
         self.outputs1, self.aggregators = self.aggregate(samples1, [self.features], self.dims, num_samples,
                 support_sizes1, concat=self.concat, model_size=self.model_size)
         dim_mult = 2 if self.concat else 1
 
+        # line 7 of Algorithm 1: normalize embeddings to unit L2 norm
         self.outputs1 = tf.nn.l2_normalize(self.outputs1, 1)
 
-        dim_mult = 2 if self.concat else 1
-        self.node_pred = layers.Dense(dim_mult*self.dims[-1], self.num_classes, 
+        # classification head: a single Dense layer mapping the final-layer
+        # embedding to `num_classes` logits
+        self.node_pred = layers.Dense(dim_mult*self.dims[-1], self.num_classes,
                 dropout=self.placeholders['dropout'],
                 act=lambda x : x)
         # TF graph management
         self.node_preds = self.node_pred(self.outputs1)
 
         self._loss()
+        # gradient clipping, as in the unsupervised model (models.py)
         grads_and_vars = self.optimizer.compute_gradients(self.loss)
-        clipped_grads_and_vars = [(tf.clip_by_value(grad, -5.0, 5.0) if grad is not None else None, var) 
+        clipped_grads_and_vars = [(tf.clip_by_value(grad, -5.0, 5.0) if grad is not None else None, var)
                 for grad, var in grads_and_vars]
         self.grad, _ = clipped_grads_and_vars[0]
         self.opt_op = self.optimizer.apply_gradients(clipped_grads_and_vars)
         self.preds = self.predict()
 
     def _loss(self):
+        """L2 weight decay (aggregators + classification head) plus the
+        classification loss: sigmoid cross-entropy for multi-label datasets
+        (e.g. PPI, where a node can have several simultaneous labels --
+        enabled via `--sigmoid true`), or softmax cross-entropy for
+        single-label datasets."""
         # Weight decay loss
         for aggregator in self.aggregators:
             for var in aggregator.vars.values():
                 self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
         for var in self.node_pred.vars.values():
             self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
-       
+
         # classification loss
         if self.sigmoid_loss:
             self.loss += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
@@ -120,6 +138,9 @@ class SupervisedGraphsage(models.SampleAndAggregate):
         tf.summary.scalar('loss', self.loss)
 
     def predict(self):
+        """Convert classification logits into probabilities: independent
+        per-class sigmoid for multi-label, or a joint softmax for
+        single-label."""
         if self.sigmoid_loss:
             return tf.nn.sigmoid(self.node_preds)
         else:

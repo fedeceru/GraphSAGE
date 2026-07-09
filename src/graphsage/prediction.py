@@ -1,3 +1,16 @@
+"""
+Implements the paper's unsupervised objective (Eq. 1, Section 3.2): a
+skip-gram-style loss that pulls together the embeddings of nodes that
+co-occur on a random walk, and pushes apart the embeddings of a node and its
+negative samples.
+
+``BipartiteEdgePredLayer`` doesn't know anything about sampling or the graph
+itself -- it is only responsible for turning three batches of already-computed
+node embeddings (anchor nodes, their positive/context neighbors, and negative
+samples) into a scalar loss and an "affinity" score usable for ranking/MRR.
+It is instantiated once as ``SampleAndAggregate.link_pred_layer`` in
+``models.py``.
+"""
 from __future__ import division
 from __future__ import print_function
 
@@ -18,10 +31,14 @@ class BipartiteEdgePredLayer(Layer):
         (i.e., dot product of node+target and node and negative samples)
         Args:
             bilinear_weights: use a bilinear weight for affinity calculation: u^T A v. If set to
-                false, it is assumed that input dimensions are the same and the affinity will be 
+                false, it is assumed that input dimensions are the same and the affinity will be
                 based on dot product.
         """
         super(BipartiteEdgePredLayer, self).__init__(**kwargs)
+        # NOTE: `loss_fn` defaults to 'xent' (binary cross-entropy on the
+        # affinity scores) and this is the only variant actually used by
+        # models.py; 'skipgram' and 'hinge' below are alternative objectives
+        # kept for experimentation but not wired up anywhere else.
         self.input_dim1 = input_dim1
         self.input_dim2 = input_dim2
         self.act = act
@@ -70,6 +87,8 @@ class BipartiteEdgePredLayer(Layer):
         Args:
             inputs1: tensor of shape [batch_size x feature_size].
         """
+        # Row-wise dot product z_u . z_v (or u^T A v if bilinear_weights),
+        # i.e. exactly the z_u^T z_v term inside sigma(.) in Eq. 1 of the paper.
         # shape: [batch_size, input_dim1]
         if self.bilinear_weights:
             prod = tf.matmul(inputs2, tf.transpose(self.vars['weights']))
@@ -100,6 +119,11 @@ class BipartiteEdgePredLayer(Layer):
         return self.loss_fn(inputs1, inputs2, neg_samples)
 
     def _xent_loss(self, inputs1, inputs2, neg_samples, hard_neg_samples=None):
+        """Binary cross-entropy version of Eq. 1: treats the true affinity as
+        a "should be classified positive" logit and every negative-sample
+        affinity as a "should be classified negative" logit, then sums both
+        cross-entropy terms. This is the loss actually used for training
+        (see ``models.SampleAndAggregate._loss``)."""
         aff = self.affinity(inputs1, inputs2)
         neg_aff = self.neg_cost(inputs1, neg_samples, hard_neg_samples)
         true_xent = tf.nn.sigmoid_cross_entropy_with_logits(
