@@ -1,0 +1,169 @@
+"""
+Single entry point that reproduces the whole PPI experiment end to end:
+dataset download (if missing) -> baselines -> 4 aggregators x
+{supervised, unsupervised} + eval -> results table -> notebook build +
+execute. One run per variant, using the original code's default
+hyperparameters (see README.md for the full write-up and rationale).
+
+Every unsupervised run also gets --embedding_snapshot_steps (it's a generic
+mechanism, not tied to any one aggregator), so notebook.ipynb can plot the
+training-progression view for whichever aggregator is picked via its
+EMBED_MODEL setting, not just one fixed variant.
+
+Usage:
+    .venv\\Scripts\\python.exe scripts\\run_ppi_experiments.py
+
+Requires the .venv described in README.md to already exist at the repo
+root (this script does not create it). Read top to bottom: main() *is*
+the pipeline, one step per section, each step's output logged under
+logs/ and its exit code checked before moving to the next.
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import urllib.request
+import zipfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+
+MODELS = ["graphsage_mean", "gcn", "graphsage_seq", "graphsage_maxpool"]
+
+# Steps at which unsupervised_train.py additionally dumps a full embedding
+# snapshot (see --embedding_snapshot_steps): right after init, then after
+# 100/200/800/3000/8000 steps, then ~1 full epoch (17050 steps). Feeds
+# notebook.ipynb's PCA/t-SNE training-progression visuals.
+SNAPSHOT_STEPS = "0,100,200,800,3000,8000,17050"
+
+
+def run_streamed(cmd: list[str], log_path: Path, env: dict) -> None:
+    """Run `cmd`, streaming its combined stdout+stderr to the console *and*
+    to `log_path` live as it's produced, then raise if it exited non-zero."""
+    print("\n$ " + " ".join(cmd))
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            cmd,
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            sys.stdout.write(line)
+            log_file.write(line)
+        process.wait()
+    if process.returncode != 0:
+        raise RuntimeError("Command failed (exit %d): %s" % (process.returncode, " ".join(cmd)))
+
+
+def download_ppi_if_missing(data_dir: Path) -> None:
+    """Fetch the public PPI dataset (linked from the paper) into data/ppi/,
+    unless it's already there, so re-running this script never re-downloads."""
+    if (data_dir / "ppi" / "ppi-G.json").exists():
+        return
+    print("=== Downloading PPI dataset (public, linked from the paper) ===")
+    zip_path = data_dir / "ppi.zip"
+    urllib.request.urlretrieve("http://snap.stanford.edu/graphsage/ppi.zip", zip_path)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(data_dir)
+    zip_path.unlink()
+
+
+def main() -> None:
+    if not VENV_PYTHON.exists():
+        raise FileNotFoundError(
+            f".venv not found at {REPO_ROOT / '.venv'} -- follow the Setup section in README.md first."
+        )
+
+    logs_dir = REPO_ROOT / "logs"
+    results_dir = REPO_ROOT / "results"
+    data_dir = REPO_ROOT / "data"
+    for d in (logs_dir, results_dir, data_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    # Two environment tweaks needed by the subprocesses below: put the
+    # venv's own Scripts/ first on PATH (so any subprocess-of-a-subprocess,
+    # e.g. the Jupyter kernel nbconvert launches, resolves to this
+    # interpreter), and put src/ on PYTHONPATH so `python -m graphsage.xxx`
+    # can find the package (scripts/*.py instead add src/ to sys.path
+    # themselves, see their `sys.path.insert(...)` line).
+    env = os.environ.copy()
+    env["PATH"] = str(VENV_PYTHON.parent) + os.pathsep + env.get("PATH", "")
+    env["PYTHONPATH"] = str(REPO_ROOT / "src")
+
+    download_ppi_if_missing(data_dir)
+
+    print("=== Baselines (Random, Raw features) ===")
+    run_streamed(
+        [str(VENV_PYTHON), "scripts/baseline_ppi.py",
+         "--train_prefix", "data/ppi/ppi",
+         "--out", "results/baseline_ppi.json"],
+        logs_dir / "baseline_ppi.log", env,
+    )
+
+    for m in MODELS:
+        print(f"=== Supervised: {m} ===")
+        run_streamed(
+            [str(VENV_PYTHON), "-m", "graphsage.supervised_train",
+             "--train_prefix", "data/ppi/ppi",
+             "--model", m,
+             "--sigmoid", "true",
+             "--model_size", "small",
+             "--base_log_dir", "logs",
+             "--gpu", "0"],
+            logs_dir / f"sup_{m}.log", env,
+        )
+
+    for m in MODELS:
+        print(f"=== Unsupervised: {m} ===")
+        run_streamed(
+            [str(VENV_PYTHON), "-m", "graphsage.unsupervised_train",
+             "--train_prefix", "data/ppi/ppi",
+             "--model", m,
+             "--model_size", "small",
+             "--base_log_dir", "logs",
+             "--embedding_snapshot_steps", SNAPSHOT_STEPS,
+             "--gpu", "0"],
+            logs_dir / f"unsup_{m}.log", env,
+        )
+
+        embed_dir = logs_dir / "unsup-ppi" / f"{m}_small_0.000010"
+        print(f"=== Eval unsupervised embeddings: {m} ===")
+        run_streamed(
+            [str(VENV_PYTHON), "scripts/eval_unsupervised.py",
+             "--train_prefix", "data/ppi/ppi",
+             "--embed_dir", str(embed_dir),
+             "--out", f"results/eval_unsup_{m}.json"],
+            logs_dir / f"eval_unsup_{m}.log", env,
+        )
+
+    print("=== Compiling results table ===")
+    run_streamed(
+        [str(VENV_PYTHON), "scripts/compile_results.py"],
+        logs_dir / "compile_results.log", env,
+    )
+
+    print("=== Building notebook.ipynb ===")
+    run_streamed(
+        [str(VENV_PYTHON), "scripts/build_notebook.py"],
+        logs_dir / "build_notebook.log", env,
+    )
+
+    print("=== Executing notebook.ipynb ===")
+    run_streamed(
+        [str(VENV_PYTHON), "-m", "nbconvert", "--to", "notebook", "--execute", "--inplace", "notebook.ipynb"],
+        logs_dir / "notebook_execute.log", env,
+    )
+
+    print("\nDONE -- see results/ppi_results.md and notebook.ipynb")
+
+
+if __name__ == "__main__":
+    main()

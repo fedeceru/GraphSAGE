@@ -4,7 +4,7 @@ aggregator variants (mean / GCN / LSTM / pooling) directly on a downstream
 node-classification task (cross-entropy loss), as opposed to
 ``unsupervised_train.py``'s skip-gram objective.
 
-Typical usage (see also scripts/run_ppi_experiments.ps1 for a full example):
+Typical usage (see also scripts/run_ppi_experiments.py for a full example):
 
     python -m graphsage.supervised_train \\
         --train_prefix data/ppi/ppi --model graphsage_mean \\

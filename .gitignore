@@ -123,3 +123,6 @@ ENV/
 
 *.claude
 
+# Personal / confidential prep notes -- never for GitHub
+REPO_GUIDE_CONFIDENTIAL.md
+

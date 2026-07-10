@@ -5,7 +5,7 @@ baseline (``--model n2v``), on the skip-gram-style link-prediction objective
 of Eq. 1 in the paper -- as opposed to ``supervised_train.py``'s direct
 classification loss.
 
-Typical usage (see also scripts/run_ppi_experiments.ps1 for a full example):
+Typical usage (see also scripts/run_ppi_experiments.py for a full example):
 
     python -m graphsage.unsupervised_train \\
         --train_prefix data/ppi/ppi --model graphsage_mean --gpu 0

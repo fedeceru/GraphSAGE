@@ -56,7 +56,7 @@ scripts/                   the reproduction pipeline (not part of the original p
   eval_unsupervised.py        logistic-regression eval of unsupervised embeddings
   compile_results.py          collects everything into results/ppi_results.md
   build_notebook.py           generates notebook.ipynb from scratch (source of truth for its content)
-  run_ppi_experiments.ps1     runs the entire pipeline end to end (see below)
+  run_ppi_experiments.py      runs the entire pipeline end to end (see below)
 
 data/ppi/                  the PPI dataset (gitignored, downloaded by the pipeline)
 logs/                      training logs, TensorBoard events, metrics.csv, saved
@@ -107,7 +107,7 @@ either way with:
 ## Reproducing everything
 
 ```powershell
-powershell -File scripts\run_ppi_experiments.ps1
+.venv\Scripts\python.exe scripts\run_ppi_experiments.py
 ```
 
 This single script downloads the PPI dataset (if not already present),
@@ -133,7 +133,7 @@ run, supervised or unsupervised, also writes a structured `metrics.csv`
 output, which is what the notebook's training-dynamics charts read from.
 
 Each step can also be run individually — see the commands inside
-`scripts/run_ppi_experiments.ps1`, or `notebook.ipynb` §7 for the reasoning
+`scripts/run_ppi_experiments.py`, or `notebook.ipynb` §7 for the reasoning
 behind each one.
 
 ## What was (and wasn't) changed from the original paper code

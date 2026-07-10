@@ -593,7 +593,7 @@ unaffected) that dumps embeddings for every node at the given training steps
 *during* its regular, single continuous run -- same seeds, same minibatch
 order as the reproduction above, no separate or duplicate training required.
 The flag is generic (any aggregator can use it), so
-`scripts/run_ppi_experiments.ps1` passes it to all four unsupervised runs,
+`scripts/run_ppi_experiments.py` passes it to all four unsupervised runs,
 each producing 7 snapshots along the way: right after initialization (step
 0), and after 100, 200, 800, 3,000, 8,000 and 17,050 (~1 full epoch)
 gradient steps. Because each is one uninterrupted run, these are genuine
@@ -622,7 +622,7 @@ from graphsage.utils import load_data
 
 # Pick which aggregator's training progression to plot -- any of the four
 # MODELS work here as long as that variant was run with
-# --embedding_snapshot_steps (scripts/run_ppi_experiments.ps1 passes it to
+# --embedding_snapshot_steps (scripts/run_ppi_experiments.py passes it to
 # all four). Change this to compare a different aggregator's progression.
 EMBED_MODEL = "graphsage_maxpool"  # our strongest unsupervised variant (see table above)
 
@@ -637,7 +637,7 @@ print("Aggregators with snapshot data available:", [f for f, ok in available_sna
 if not available_snapshots.get(EMBED_MODEL, False):
     raise FileNotFoundError(
         f"No snapshots found for '{EMBED_MODEL}'. Rerun it with --embedding_snapshot_steps "
-        "(see scripts/run_ppi_experiments.ps1), or set EMBED_MODEL above to one of the "
+        "(see scripts/run_ppi_experiments.py), or set EMBED_MODEL above to one of the "
         "aggregators listed as available."
     )
 
