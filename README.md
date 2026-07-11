@@ -55,7 +55,6 @@ scripts/                   the reproduction pipeline (not part of the original p
   baseline_ppi.py             Random + Raw features baselines
   eval_unsupervised.py        logistic-regression eval of unsupervised embeddings
   compile_results.py          collects everything into results/ppi_results.md
-  build_notebook.py           generates notebook.ipynb from scratch (source of truth for its content)
   run_ppi_experiments.py      runs the entire pipeline end to end (see below)
 
 data/ppi/                  the PPI dataset (gitignored, downloaded by the pipeline)
@@ -113,9 +112,10 @@ either way with:
 This single script downloads the PPI dataset (if not already present),
 computes the Random/Raw-features baselines, runs all 4 aggregators ×
 {supervised, unsupervised} on PPI, evaluates the unsupervised embeddings,
-compiles `results/ppi_results.md`, and finally rebuilds and re-executes
-`notebook.ipynb` — so a clean checkout plus this one command regenerates
-every tracked result and figure from scratch. Expect roughly 30–45 minutes
+compiles `results/ppi_results.md`, and finally re-executes `notebook.ipynb`
+in place — so a clean checkout plus this one command regenerates every
+tracked result and figure from scratch, feeding into the notebook you edit
+by hand. Expect roughly 30–45 minutes
 on a single consumer GPU (the paper's own experiments took 4–7 days on
 comparable hardware for the *full* three-dataset, full-sweep reproduction —
 this is deliberately a smaller, single-dataset, single-hyperparameter-setting
