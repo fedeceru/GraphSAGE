@@ -1,4 +1,4 @@
-# GraphSAGE: PPI Reproduction
+# GraphSAGE - PPI
 
 A reproduction of **"Inductive Representation Learning on Large Graphs"**
 (Hamilton, Ying, Leskovec, NeurIPS 2017, [`GraphSAGE.pdf`](GraphSAGE.pdf)),
