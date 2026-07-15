@@ -50,47 +50,7 @@ logs/                                              training logs, TensorBoard ev
 results/                                           final metrics + figures
 ```
 
-## Setup
-
-TensorFlow 1.15 (which this code needs, since it predates `tf.compat.v1`) only
-ships official Windows wheels for **Python ≤ 3.7**. If your system Python is
-newer (check with `python --version`), get a 3.7 interpreter via Miniconda
-and use it only to create a normal venv; everything after that is plain
-`pip`/`venv`, no conda needed at runtime:
-
-```powershell
-winget install -e --id Anaconda.Miniconda3
-& "$env:USERPROFILE\miniconda3\Scripts\conda.exe" create -n py37 python=3.7 -y
-& "$env:USERPROFILE\miniconda3\envs\py37\python.exe" -m venv .venv
-
-.venv\Scripts\python.exe -m pip install --upgrade pip
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-> The `py37` conda env must stay installed even after this: the venv's
-> `pyvenv.cfg` points back to it for the base interpreter (`python37.dll`,
-> the standard library, etc.), the same way any Python venv depends on its
-> base install.
-
-**Optional GPU acceleration.** TensorFlow 1.15 needs CUDA 10.0 + cuDNN 7.6.
-The simplest way to get exactly those on Windows without touching your
-system-wide CUDA install is via conda packages, whose DLLs you then copy
-next to the venv's own interpreter:
-
-```powershell
-& "$env:USERPROFILE\miniconda3\Scripts\conda.exe" install -n py37 tensorflow-gpu=1.15 -y
-Copy-Item "$env:USERPROFILE\miniconda3\envs\py37\Library\bin\{cudart64_100,cublas64_100,cufft64_100,curand64_100,cusolver64_100,cusparse64_100,cudnn64_7}.dll" .venv\Scripts\
-Copy-Item .venv\Scripts\*.dll .venv\Lib\site-packages\tensorflow_core\python\
-```
-
-Without this, everything still runs correctly on CPU, just slower. Verify
-either way with:
-
-```powershell
-.venv\Scripts\python.exe -c "import tensorflow as tf; print(tf.Session().run(tf.constant('ok')))"
-```
-
-## Reproducing everything
+## Reproduction
 
 ```powershell
 .venv\Scripts\python.exe scripts\run_ppi_experiments.py
@@ -100,20 +60,14 @@ This single script downloads the PPI dataset (if not already present),
 computes the Random/Raw-features baselines, runs all 4 aggregators ×
 {supervised, unsupervised} on PPI, evaluates the unsupervised embeddings,
 compiles `results/ppi_results.md`, and finally re-executes `notebook.ipynb`
-in place, so a clean checkout plus this one command regenerates every
-tracked result and figure from scratch, feeding into the notebook you edit
-by hand. Expect roughly 30-45 minutes
-on a single consumer GPU (the paper's own experiments took 4-7 days on
-comparable hardware for the *full* three-dataset, full-sweep reproduction;
-this is deliberately a smaller, single-dataset, single-hyperparameter-setting
-slice of that; see `notebook.ipynb` §7 for the exact scope decisions and why).
+in place. This is deliberately a smaller, single-dataset, single-hyperparameter-setting
+slice of that.
 
 Every unsupervised run is also passed `--embedding_snapshot_steps`, so each
 one produces both its final embeddings (for the F1 table above) *and* the
 intermediate checkpoints notebook.ipynb's PCA/t-SNE training-progression
-visuals need, so you don't need a separate or duplicate training run. The flag is
-generic (not tied to any one aggregator), so this works for all four
-variants; `notebook.ipynb` §8.2 lets you pick which one to look at via its
+visuals need. The flag is generic, so this works for all four
+aggregators; `notebook.ipynb` §8.2 lets you pick which one to look at via its
 `EMBED_MODEL` setting, defaulting to the best unsupervised performer. Every
 run, supervised or unsupervised, also writes a structured `metrics.csv`
 (step, epoch, loss, F1/MRR) into its log directory alongside the console
@@ -122,38 +76,3 @@ output, which is what the notebook's training-dynamics charts read from.
 Each step can also be run individually; see the commands inside
 `scripts/run_ppi_experiments.py`, or `notebook.ipynb` §7 for the reasoning
 behind each one.
-
-## What was (and wasn't) changed from the original paper code
-
-`src/graphsage/` is the original `williamleif/GraphSAGE` reference
-implementation, and **default behavior is unchanged**: same algorithm, same
-default hyperparameters, same training loop, same outputs. What *was* added:
-
-- **Documentation.** Every file, class and function now has a docstring, and
-  the non-obvious lines (padding/sampling tricks, the backward minibatch
-  construction, the aggregator math) are commented with pointers back to the
-  paper's algorithms and equations.
-- **One dead-code removal.** `aggregators.SeqAggregator` had an assignment
-  immediately overwritten by the next statement; removed, verified to not
-  change any output by re-running training before/after and diffing the
-  resulting metrics.
-- **Two opt-in instrumentation additions**, both off by default so a plain
-  `python -m graphsage.unsupervised_train --model X ...` behaves exactly as
-  before:
-  - `metrics.csv` is now always written per run (`supervised_train.py` and
-    `unsupervised_train.py`): a structured, per-step counterpart to the
-    console log (same spirit as the pre-existing TensorBoard summary
-    writer). This is a pure side effect; it changes what gets *written to
-    disk*, never what gets *computed*.
-  - `unsupervised_train.py` gained an `--embedding_snapshot_steps` flag
-    (default: empty string, i.e. disabled) that, when set, additionally
-    dumps embeddings for every node at the given training steps. It's
-    generic; it works the same way regardless of `--model`, so any
-    aggregator's training progression can be visualized, not just one. This
-    is what feeds the notebook's training-progression visuals, without
-    needing a second, duplicate training run for that purpose.
-
-Everything under `scripts/` and `notebook.ipynb` is new: it orchestrates the
-existing training code, adds the baselines and evaluation the paper
-describes but that weren't included in the given source files, and turns
-the results into the comparison tables/figures above.
