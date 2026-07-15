@@ -1,4 +1,4 @@
-# Reproduced results — PPI (comparison with Table 1 of the paper)
+# Reproduced results: PPI (comparison with Table 1 of the paper)
 
 | Name | Unsup. F1 (reproduced) | Unsup. F1 (paper) | Sup. F1 (reproduced) | Sup. F1 (paper) |
 |---|---|---|---|---|

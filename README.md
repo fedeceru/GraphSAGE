@@ -1,14 +1,14 @@
-# GraphSAGE — PPI Reproduction
+# GraphSAGE: PPI Reproduction
 
 A reproduction of **"Inductive Representation Learning on Large Graphs"**
-(Hamilton, Ying, Leskovec — NeurIPS 2017, [`GraphSAGE.pdf`](GraphSAGE.pdf)),
+(Hamilton, Ying, Leskovec, NeurIPS 2017, [`GraphSAGE.pdf`](GraphSAGE.pdf)),
 using the paper's own reference implementation, scoped to the **PPI**
-(protein-protein interaction) benchmark — the only one of the paper's three
+(protein-protein interaction) benchmark, the only one of the paper's three
 datasets that is publicly downloadable (the Citation/Web-of-Science dataset
 is licensed by Thomson Reuters; Reddit was excluded to keep scope/runtime
 reasonable).
 
-**Start here:** [`notebook.ipynb`](notebook.ipynb) — a chapter-by-chapter
+**Start here:** [`notebook.ipynb`](notebook.ipynb): a chapter-by-chapter
 walkthrough of the paper (theory, formulas, pseudocode) interleaved with the
 real results and visuals produced by this reproduction.
 
@@ -31,7 +31,7 @@ Same qualitative ordering as the paper (GraphSAGE ≫ Raw features > Random,
 GCN weakest, LSTM/pool strongest, supervised ≥ unsupervised); see
 `notebook.ipynb` §8 for the full discussion, comparison charts, training
 curves, and embedding-space visuals. Regenerated automatically by
-`scripts/compile_results.py` — see [Reproducing everything](#reproducing-everything).
+`scripts/compile_results.py`; see [Reproducing everything](#reproducing-everything).
 
 ## Repository structure
 
@@ -49,7 +49,7 @@ src/graphsage/             the original GraphSAGE implementation
   prediction.py                 skip-gram link-prediction loss (Eq. 1)
   layers.py, inits.py, metrics.py, utils.py     supporting building blocks
   supervised_train.py, unsupervised_train.py     CLI training entry points
-  (default behavior unchanged from the original paper's code -- see below)
+  (default behavior unchanged from the original paper's code, see below)
 
 scripts/                   the reproduction pipeline (not part of the original paper code)
   baseline_ppi.py             Random + Raw features baselines
@@ -65,10 +65,10 @@ results/                   final metrics (tracked) + figures (tracked, *.png all
 
 ## Setup
 
-TensorFlow 1.15 (which this code needs — it predates `tf.compat.v1`) only
+TensorFlow 1.15 (which this code needs, since it predates `tf.compat.v1`) only
 ships official Windows wheels for **Python ≤ 3.7**. If your system Python is
 newer (check with `python --version`), get a 3.7 interpreter via Miniconda
-and use it only to create a normal venv — everything after that is plain
+and use it only to create a normal venv; everything after that is plain
 `pip`/`venv`, no conda needed at runtime:
 
 ```powershell
@@ -80,7 +80,7 @@ winget install -e --id Anaconda.Miniconda3
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-> The `py37` conda env must stay installed even after this — the venv's
+> The `py37` conda env must stay installed even after this: the venv's
 > `pyvenv.cfg` points back to it for the base interpreter (`python37.dll`,
 > the standard library, etc.), the same way any Python venv depends on its
 > base install.
@@ -96,7 +96,7 @@ Copy-Item "$env:USERPROFILE\miniconda3\envs\py37\Library\bin\{cudart64_100,cubla
 Copy-Item .venv\Scripts\*.dll .venv\Lib\site-packages\tensorflow_core\python\
 ```
 
-Without this, everything still runs correctly on CPU — just slower. Verify
+Without this, everything still runs correctly on CPU, just slower. Verify
 either way with:
 
 ```powershell
@@ -113,18 +113,18 @@ This single script downloads the PPI dataset (if not already present),
 computes the Random/Raw-features baselines, runs all 4 aggregators ×
 {supervised, unsupervised} on PPI, evaluates the unsupervised embeddings,
 compiles `results/ppi_results.md`, and finally re-executes `notebook.ipynb`
-in place — so a clean checkout plus this one command regenerates every
+in place, so a clean checkout plus this one command regenerates every
 tracked result and figure from scratch, feeding into the notebook you edit
-by hand. Expect roughly 30–45 minutes
-on a single consumer GPU (the paper's own experiments took 4–7 days on
-comparable hardware for the *full* three-dataset, full-sweep reproduction —
+by hand. Expect roughly 30-45 minutes
+on a single consumer GPU (the paper's own experiments took 4-7 days on
+comparable hardware for the *full* three-dataset, full-sweep reproduction;
 this is deliberately a smaller, single-dataset, single-hyperparameter-setting
 slice of that; see `notebook.ipynb` §7 for the exact scope decisions and why).
 
 Every unsupervised run is also passed `--embedding_snapshot_steps`, so each
 one produces both its final embeddings (for the F1 table above) *and* the
 intermediate checkpoints notebook.ipynb's PCA/t-SNE training-progression
-visuals need — no separate or duplicate training run required. The flag is
+visuals need, so you don't need a separate or duplicate training run. The flag is
 generic (not tied to any one aggregator), so this works for all four
 variants; `notebook.ipynb` §8.2 lets you pick which one to look at via its
 `EMBED_MODEL` setting, defaulting to the best unsupervised performer. Every
@@ -132,7 +132,7 @@ run, supervised or unsupervised, also writes a structured `metrics.csv`
 (step, epoch, loss, F1/MRR) into its log directory alongside the console
 output, which is what the notebook's training-dynamics charts read from.
 
-Each step can also be run individually — see the commands inside
+Each step can also be run individually; see the commands inside
 `scripts/run_ppi_experiments.py`, or `notebook.ipynb` §7 for the reasoning
 behind each one.
 
@@ -154,14 +154,14 @@ default hyperparameters, same training loop, same outputs. What *was* added:
   `python -m graphsage.unsupervised_train --model X ...` behaves exactly as
   before:
   - `metrics.csv` is now always written per run (`supervised_train.py` and
-    `unsupervised_train.py`) — a structured, per-step counterpart to the
+    `unsupervised_train.py`): a structured, per-step counterpart to the
     console log (same spirit as the pre-existing TensorBoard summary
     writer). This is a pure side effect; it changes what gets *written to
     disk*, never what gets *computed*.
   - `unsupervised_train.py` gained an `--embedding_snapshot_steps` flag
     (default: empty string, i.e. disabled) that, when set, additionally
     dumps embeddings for every node at the given training steps. It's
-    generic — works the same way regardless of `--model` — so any
+    generic; it works the same way regardless of `--model`, so any
     aggregator's training progression can be visualized, not just one. This
     is what feeds the notebook's training-progression visuals, without
     needing a second, duplicate training run for that purpose.
