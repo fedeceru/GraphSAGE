@@ -4,24 +4,6 @@ A reproduction of **"Inductive Representation Learning on Large Graphs"**
 (Hamilton, Ying, Leskovec, NeurIPS 2017, [`GraphSAGE.pdf`](GraphSAGE.pdf)),
 specifically scoped to the **PPI** (protein-protein interaction) benchmark.
 
-## Results
-
-Table 1 (PPI columns) reproduced with a **single run per variant**, using
-the code's default hyperparameters rather than the full hyperparameter sweep
-from Appendix C:
-
-| Name | Unsup. F1 (reproduced) | Unsup. F1 (paper) | Sup. F1 (reproduced) | Sup. F1 (paper) |
-|---|---|---|---|---|
-| Random | 0.398 | 0.396 | 0.398 | 0.396 |
-| Raw features | 0.434 | 0.422 | 0.434 | 0.422 |
-| GraphSAGE-GCN | 0.454 | 0.465 | 0.521 | 0.500 |
-| GraphSAGE-mean | 0.464 | 0.486 | 0.585 | 0.598 |
-| GraphSAGE-LSTM | 0.446 | 0.482 | 0.607 | 0.612 |
-| GraphSAGE-pool | 0.482 | 0.502 | 0.602 | 0.600 |
-
-Same qualitative ordering as the paper (GraphSAGE ≫ Raw features > Random,
-GCN weakest, LSTM/pool strongest, supervised ≥ unsupervised).
-
 ## Repository structure
 
 ```
@@ -74,5 +56,24 @@ run, supervised or unsupervised, also writes a structured `metrics.csv`
 output, which is what the notebook's training-dynamics charts read from.
 
 Each step can also be run individually; see the commands inside
+
+## Results
+
+Table 1 (PPI columns) reproduced with a **single run per variant**, using
+the code's default hyperparameters rather than the full hyperparameter sweep
+from Appendix C:
+
+| Name | Unsup. F1 (reproduced) | Unsup. F1 (paper) | Sup. F1 (reproduced) | Sup. F1 (paper) |
+|---|---|---|---|---|
+| Random | 0.398 | 0.396 | 0.398 | 0.396 |
+| Raw features | 0.434 | 0.422 | 0.434 | 0.422 |
+| GraphSAGE-GCN | 0.454 | 0.465 | 0.521 | 0.500 |
+| GraphSAGE-mean | 0.464 | 0.486 | 0.585 | 0.598 |
+| GraphSAGE-LSTM | 0.446 | 0.482 | 0.607 | 0.612 |
+| GraphSAGE-pool | 0.482 | 0.502 | 0.602 | 0.600 |
+
+Same qualitative ordering as the paper (GraphSAGE ≫ Raw features > Random,
+GCN weakest, LSTM/pool strongest, supervised ≥ unsupervised).
+
 `scripts/run_ppi_experiments.py`, or `notebook.ipynb` §7 for the reasoning
 behind each one.
