@@ -1,0 +1,67 @@
+{
+  "time_budget_minutes": 100.0,
+  "items": [
+    {
+      "name": "sweep-supervised",
+      "tier": 1,
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sweep_ppi_experiments.py --settings supervised --sup_lrs 0.01 0.001 --sizes small --gpu 0",
+      "ran": true,
+      "ok": true,
+      "elapsed_sec": 163.7795660495758,
+      "reason": null,
+      "elapsed_total_sec_at_finish": 163.7795660495758
+    },
+    {
+      "name": "sweep-unsupervised",
+      "tier": 1,
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sweep_ppi_experiments.py --settings unsupervised --unsup_lrs 0.000002 0.0000002 --sizes small --max_total_steps 3000 --gpu 0",
+      "ran": true,
+      "ok": true,
+      "elapsed_sec": 2537.512839078903,
+      "reason": null,
+      "elapsed_total_sec_at_finish": 2701.292405128479
+    },
+    {
+      "name": "multiseed-supervised",
+      "tier": 2,
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/multiseed_ppi_experiments.py --settings supervised --seeds 123 124 --epochs 5 --gpu 0",
+      "ran": true,
+      "ok": true,
+      "elapsed_sec": 122.78532934188843,
+      "reason": null,
+      "elapsed_total_sec_at_finish": 2824.0777344703674
+    },
+    {
+      "name": "multiseed-unsupervised",
+      "tier": 2,
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/multiseed_ppi_experiments.py --settings unsupervised --seeds 123 124 --max_total_steps 3000 --gpu 0",
+      "ran": true,
+      "ok": true,
+      "elapsed_sec": 1325.2340483665466,
+      "reason": null,
+      "elapsed_total_sec_at_finish": 4149.311782836914
+    },
+    {
+      "name": "sensitivity-k-sweep",
+      "tier": 3,
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sensitivity_ppi_experiments.py --k_only --epochs 5 --gpu 0",
+      "ran": true,
+      "ok": true,
+      "elapsed_sec": 53.44166684150696,
+      "reason": null,
+      "elapsed_total_sec_at_finish": 4202.753449678421
+    },
+    {
+      "name": "noise-robustness",
+      "tier": 4,
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/noise_robustness_ppi_experiments.py --noise_props 0.0 0.5 1.0 --epochs 5 --gpu 0",
+      "ran": true,
+      "ok": true,
+      "elapsed_sec": 182.59410166740417,
+      "reason": null,
+      "elapsed_total_sec_at_finish": 4385.347551345825
+    }
+  ],
+  "total_elapsed_sec": 4385.347551345825,
+  "total_elapsed_min": 73.08912585576375
+}

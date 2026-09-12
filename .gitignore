@@ -28,6 +28,12 @@ unsup-*/
 checkpoints/
 .ipynb_checkpoints/
 
+# Scratch: per-candidate scores already aggregated into results/*.json
+# (e.g. best_hparams_ppi.json, seed_variance_ppi.json) by
+# sweep_ppi_experiments.py / multiseed_ppi_experiments.py.
+results/_sweep_tmp/
+results/_seed_tmp/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

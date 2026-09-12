@@ -42,6 +42,19 @@ MODELS = ["graphsage_mean", "gcn", "graphsage_seq", "graphsage_maxpool"]
 # notebook.ipynb's PCA/t-SNE training-progression visuals.
 SNAPSHOT_STEPS = "0,100,200,800,3000,8000,17050"
 
+# Passed explicitly below (rather than left to unsupervised_train.py's own
+# --learning_rate default) so the log directory this script looks for
+# (unsup_embed_dir_tag below) can never silently drift out of sync with what
+# was actually passed on the command line.
+DEFAULT_UNSUP_LR = 0.00001
+
+
+def unsup_embed_dir_tag(model: str) -> str:
+    """Matches unsupervised_train.py's log_dir() naming:
+    ``{model}_small_{lr:.2e}`` (scientific notation -- see that function's
+    docstring for why fixed-point isn't used)."""
+    return "%s_small_%s" % (model, format(DEFAULT_UNSUP_LR, ".2e"))
+
 
 def run_streamed(cmd: list[str], log_path: Path, env: dict) -> None:
     """Run `cmd`, streaming its combined stdout+stderr to the console *and*
@@ -132,13 +145,14 @@ def main() -> None:
              "--train_prefix", "data/ppi/ppi",
              "--model", m,
              "--model_size", "small",
+             "--learning_rate", str(DEFAULT_UNSUP_LR),
              "--base_log_dir", "logs",
              "--embedding_snapshot_steps", SNAPSHOT_STEPS,
              "--gpu", "0"],
             logs_dir / f"unsup_{m}.log", env,
         )
 
-        embed_dir = logs_dir / "unsup-ppi" / f"{m}_small_0.000010"
+        embed_dir = logs_dir / "unsup-ppi" / unsup_embed_dir_tag(m)
         print(f"=== Eval unsupervised embeddings: {m} ===")
         run_streamed(
             [str(VENV_PYTHON), "scripts/eval_unsupervised.py",

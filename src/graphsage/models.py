@@ -8,10 +8,6 @@ Class overview:
                                         tkipf/gcn) handling variable scoping,
                                         save/load, and wiring up the
                                         optimizer.
-- ``MLP``                           -- a plain 2-layer feature-only baseline
-                                        (not graph-aware), used for sanity
-                                        checks / ablations, not part of the
-                                        paper's reported models.
 - ``SampleAndAggregate``            -- the actual GraphSAGE model: its
                                         ``sample`` + ``aggregate`` methods
                                         together are Algorithm 2 (minibatch
@@ -32,9 +28,6 @@ from collections import namedtuple
 
 import tensorflow as tf
 import math
-
-import graphsage.layers as layers
-import graphsage.metrics as metrics
 
 from .prediction import BipartiteEdgePredLayer
 from .aggregators import MeanAggregator, MaxPoolingAggregator, MeanPoolingAggregator, SeqAggregator, GCNAggregator
@@ -123,60 +116,6 @@ class Model(object):
         saver.restore(sess, save_path)
         print("Model restored from file: %s" % save_path)
 
-
-class MLP(Model):
-    """ A standard multi-layer perceptron """
-    def __init__(self, placeholders, dims, categorical=True, **kwargs):
-        super(MLP, self).__init__(**kwargs)
-
-        self.dims = dims
-        self.input_dim = dims[0]
-        self.output_dim = dims[-1]
-        self.placeholders = placeholders
-        self.categorical = categorical
-
-        self.inputs = placeholders['features']
-        self.labels = placeholders['labels']
-
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-
-        self.build()
-
-    def _loss(self):
-        # Weight decay loss
-        for var in self.layers[0].vars.values():
-            self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
-
-        # Cross entropy error
-        if self.categorical:
-            self.loss += metrics.masked_softmax_cross_entropy(self.outputs, self.placeholders['labels'],
-                    self.placeholders['labels_mask'])
-        # L2
-        else:
-            diff = self.labels - self.outputs
-            self.loss += tf.reduce_sum(tf.sqrt(tf.reduce_sum(diff * diff, axis=1)))
-
-    def _accuracy(self):
-        if self.categorical:
-            self.accuracy = metrics.masked_accuracy(self.outputs, self.placeholders['labels'],
-                    self.placeholders['labels_mask'])
-
-    def _build(self):
-        self.layers.append(layers.Dense(input_dim=self.input_dim,
-                                 output_dim=self.dims[1],
-                                 act=tf.nn.relu,
-                                 dropout=self.placeholders['dropout'],
-                                 sparse_inputs=False,
-                                 logging=self.logging))
-
-        self.layers.append(layers.Dense(input_dim=self.dims[1],
-                                 output_dim=self.output_dim,
-                                 act=lambda x: x,
-                                 dropout=self.placeholders['dropout'],
-                                 logging=self.logging))
-
-    def predict(self):
-        return tf.nn.softmax(self.outputs)
 
 class GeneralizedModel(Model):
     """

@@ -50,11 +50,6 @@ from graphsage.utils import load_data
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 
-# Set random seed
-seed = 123
-np.random.seed(seed)
-tf.set_random_seed(seed)
-
 # Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -62,10 +57,16 @@ FLAGS = flags.FLAGS
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             """Whether to log device placement.""")
 #core params..
-flags.DEFINE_string('model', 'graphsage', 'model names. See README for possible values.')  
+flags.DEFINE_string('model', 'graphsage', 'model names. See README for possible values.')
 flags.DEFINE_float('learning_rate', 0.00001, 'initial learning rate.')
 flags.DEFINE_string("model_size", "small", "Can be big or small; model specific def'ns")
 flags.DEFINE_string('train_prefix', '', 'name of the object file that stores the training data. must be specified.')
+flags.DEFINE_integer('seed', 123, 'random seed for numpy/tensorflow. Was previously hardcoded '
+                      '(every run used exactly one, uncontrolled draw); exposing it lets '
+                      'scripts/multiseed_ppi_experiments.py repeat a variant under several '
+                      'seeds to report mean +/- std instead of a single-seed point estimate. '
+                      'A non-default seed is appended to log_dir() below so repeated runs '
+                      "don't overwrite each other or the seed=123 baseline run.")
 
 # left to default values in main experiments 
 flags.DEFINE_integer('epochs', 1, 'number of epochs to train.')
@@ -97,17 +98,45 @@ flags.DEFINE_integer('max_total_steps', 10**10, "Maximum total number of iterati
 
 os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.gpu)
 
+# Set random seed (moved here, after FLAGS.seed is declared above, since
+# tf.app.flags/absl only resolves sys.argv -- and therefore FLAGS.seed's
+# actual value -- on first attribute access).
+np.random.seed(FLAGS.seed)
+tf.set_random_seed(FLAGS.seed)
+
 GPU_MEM_FRACTION = 0.8
 
 def log_dir():
     """Run-specific output directory, e.g.
-    ``<base_log_dir>/unsup-ppi/graphsage_mean_small_0.000010/`` -- this is
-    also where the final embeddings (val.npy/val.txt) get written."""
+    ``<base_log_dir>/unsup-ppi/graphsage_mean_small_1.00e-05/`` -- this is
+    also where the final embeddings (val.npy/val.txt) get written.
+
+    The learning rate is formatted in scientific notation (not fixed-point)
+    because Appendix C's unsupervised learning-rate sweep goes down to
+    {2e-6, 2e-7, 2e-8}: at 6 decimal places (the previous format) both 2e-7
+    and 2e-8 round to "0.000000" and would silently collide in the same
+    directory, each overwriting the other's logs/embeddings. Scientific
+    notation keeps every magnitude distinct regardless of how small a future
+    sweep's learning rate gets.
+
+    A non-default ``--seed`` additionally appends ``_seed<N>`` (mirrors
+    supervised_train.py's log_dir()), so scripts/multiseed_ppi_experiments.py
+    can run several seeds of the same (model, size, lr) without them
+    overwriting each other or the seed=123 baseline run. Likewise, a
+    non-default (samples_1, samples_2) appends ``_S<s1>-<s2>`` (same bug
+    class as the seed case: log_dir() previously ignored these flags
+    entirely, so two runs differing only in sample size would have silently
+    collided)."""
     log_dir = FLAGS.base_log_dir + "/unsup-" + FLAGS.train_prefix.split("/")[-2]
-    log_dir += "/{model:s}_{model_size:s}_{lr:0.6f}/".format(
+    log_dir += "/{model:s}_{model_size:s}_{lr:.2e}".format(
             model=FLAGS.model,
             model_size=FLAGS.model_size,
             lr=FLAGS.learning_rate)
+    if (FLAGS.samples_1, FLAGS.samples_2) != (25, 10):
+        log_dir += "_S%d-%d" % (FLAGS.samples_1, FLAGS.samples_2)
+    if FLAGS.seed != 123:
+        log_dir += "_seed%d" % FLAGS.seed
+    log_dir += "/"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     return log_dir

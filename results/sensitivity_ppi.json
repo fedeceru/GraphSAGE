@@ -1,0 +1,35 @@
+{
+  "K_sweep": [
+    {
+      "K": 1,
+      "samples": [
+        25,
+        0,
+        0
+      ],
+      "test_f1_micro": 0.4723,
+      "sec_per_iter": 0.31831
+    },
+    {
+      "K": 2,
+      "samples": [
+        25,
+        10,
+        0
+      ],
+      "test_f1_micro": 0.58459,
+      "sec_per_iter": null
+    },
+    {
+      "K": 3,
+      "samples": [
+        25,
+        10,
+        10
+      ],
+      "test_f1_micro": 0.57464,
+      "sec_per_iter": 0.70217
+    }
+  ],
+  "sample_size_sweep": []
+}

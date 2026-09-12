@@ -37,6 +37,11 @@ from __future__ import print_function
 
 import numpy as np
 
+# Runs at import time, before supervised_train.py / unsupervised_train.py
+# re-seed with FLAGS.seed further down their own module bodies (after that
+# flag is declared) -- the later call wins, since both just set numpy's one
+# global RNG state. This line only matters for callers that import this
+# module without going through one of those two entry points.
 np.random.seed(123)
 
 class EdgeMinibatchIterator(object):

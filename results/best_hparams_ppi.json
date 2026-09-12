@@ -1,0 +1,66 @@
+{
+  "graphsage_mean": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "val_f1_micro": 0.57321,
+      "test_f1_micro": 0.58459,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\sup-ppi\\graphsage_mean_small_0.0100"
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-06,
+      "val_f1_micro": 0.4610012949474578,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\unsup-ppi\\graphsage_mean_small_2.00e-06",
+      "test_f1_micro": 0.46422486944636104
+    }
+  },
+  "gcn": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "val_f1_micro": 0.51404,
+      "test_f1_micro": 0.5214,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\sup-ppi\\gcn_small_0.0100"
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-07,
+      "val_f1_micro": 0.4737840065952184,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\unsup-ppi\\gcn_small_2.00e-07",
+      "test_f1_micro": 0.47327408904667334
+    }
+  },
+  "graphsage_seq": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "val_f1_micro": 0.58503,
+      "test_f1_micro": 0.59884,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\sup-ppi\\graphsage_seq_small_0.0100"
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-06,
+      "val_f1_micro": 0.43646920034234693,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\unsup-ppi\\graphsage_seq_small_2.00e-06",
+      "test_f1_micro": 0.43946348412038266
+    }
+  },
+  "graphsage_maxpool": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "val_f1_micro": 0.58904,
+      "test_f1_micro": 0.60193,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\sup-ppi\\graphsage_maxpool_small_0.0100"
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-06,
+      "val_f1_micro": 0.45916285039560684,
+      "log_dir": "C:\\Users\\feder\\Desktop\\GraphSAGE\\logs\\unsup-ppi\\graphsage_maxpool_small_2.00e-06",
+      "test_f1_micro": 0.4662897651286511
+    }
+  }
+}

@@ -82,9 +82,9 @@ class Layer(object):
 class Dense(Layer):
     """Standard fully-connected layer: ``act(dropout(x) @ W + b)``.
 
-    Used both as a plain classifier head (``MLP`` in ``models.py``,
-    ``SupervisedGraphsage.node_pred`` in ``supervised_models.py``) and as the
-    per-neighbor MLP inside the pooling aggregators in ``aggregators.py``.
+    Used both as the classifier head (``SupervisedGraphsage.node_pred`` in
+    ``supervised_models.py``) and as the per-neighbor MLP inside the pooling
+    aggregators in ``aggregators.py``.
     """
     def __init__(self, input_dim, output_dim, dropout=0.,
                  act=tf.nn.relu, placeholders=None, bias=True, featureless=False,

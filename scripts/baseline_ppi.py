@@ -8,6 +8,20 @@ GraphSAGE paper (Section 4, "Experimental set-up", and Appendix C).
   SGDClassifier... with default settings" described in Appendix C -- trained
   on the raw features of the training nodes, evaluated on the test nodes.
 
+  "Default settings" meant something different in 2017 than it does with the
+  scikit-learn version pinned in requirements.txt (1.0.2): SGDClassifier's
+  default was a fixed `n_iter=5` (5 passes over the data, no early stopping)
+  until that parameter was deprecated in favor of `max_iter`/`tol`, with the
+  default eventually becoming `max_iter=1000, tol=1e-3` (i.e. up to 1000
+  passes, but usually stopped early once the loss improvement falls below
+  `tol` for 5 consecutive epochs) -- a materially different optimizer, not
+  just a version bump. `ERA_MATCHED_SGD_PARAMS` below reproduces the
+  paper-era fixed-5-epoch behavior explicitly (`max_iter=5, tol=None` --
+  `tol=None` is scikit-learn's documented way to disable the tol-based
+  early-stopping check so `max_iter` passes always run in full) rather than
+  relying on whatever "default" happens to mean in the installed
+  scikit-learn version.
+
 Does not modify src/graphsage: it only reuses graphsage.utils.load_data to
 load the dataset with the same preprocessing (StandardScaler fit on train)
 used by the official training scripts.
@@ -28,6 +42,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from graphsage.utils import load_data  # noqa: E402
 
 SEED = 123
+
+# See the module docstring: reproduces scikit-learn's pre-0.19 SGDClassifier
+# default (a fixed 5 passes over the data, no early stopping) instead of the
+# installed version's current default (up to 1000 passes with tol-based
+# early stopping), which is what "default settings" meant in the paper's era.
+ERA_MATCHED_SGD_PARAMS = dict(max_iter=5, tol=None)
 
 
 def get_split_labels(G, id_map, class_map, feats):
@@ -57,7 +77,7 @@ def random_baseline(y_train, y_test, seed=SEED):
 
 def raw_features_baseline(X_train, y_train, X_test, y_test, seed=SEED):
     clf = OneVsRestClassifier(
-        SGDClassifier(loss="log", random_state=seed), n_jobs=1
+        SGDClassifier(loss="log", random_state=seed, **ERA_MATCHED_SGD_PARAMS), n_jobs=1
     )
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)

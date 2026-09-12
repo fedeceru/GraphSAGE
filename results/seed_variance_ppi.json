@@ -1,0 +1,122 @@
+{
+  "graphsage_mean": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.58459,
+        0.55676
+      ],
+      "mean": 0.570675,
+      "std": 0.01967878172042163
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-06,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.46422486944636104,
+        0.4579327440901695
+      ],
+      "mean": 0.4610788067682653,
+      "std": 0.004449204507438871
+    }
+  },
+  "gcn": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.5214,
+        0.48975
+      ],
+      "mean": 0.505575,
+      "std": 0.022379929624554196
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-07,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.47327408904667334,
+        0.4643822409595242
+      ],
+      "mean": 0.46882816500309876,
+      "std": 0.0062874860797038
+    }
+  },
+  "graphsage_seq": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.59884,
+        0.57157
+      ],
+      "mean": 0.585205,
+      "std": 0.01928280192295716
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-06,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.43946348412038266,
+        0.4379377740571085
+      ],
+      "mean": 0.4387006290887456,
+      "std": 0.0010788399318657272
+    }
+  },
+  "graphsage_maxpool": {
+    "supervised": {
+      "model_size": "small",
+      "learning_rate": 0.01,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.60193,
+        0.57436
+      ],
+      "mean": 0.5881449999999999,
+      "std": 0.019494933957313103
+    },
+    "unsupervised": {
+      "model_size": "small",
+      "learning_rate": 2e-06,
+      "seeds": [
+        123,
+        124
+      ],
+      "f1_micro": [
+        0.4662897651286511,
+        0.46357095112648916
+      ],
+      "mean": 0.4649303581275701,
+      "std": 0.0019224918177136523
+    }
+  }
+}
