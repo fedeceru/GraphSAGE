@@ -16,8 +16,7 @@ Figure 2 itself is drawn on the citation and Reddit datasets specifically
 GraphSAGE-mean") -- both out of scope for this PPI-only reproduction -- so
 this script re-runs the same two sweeps on PPI instead, to check whether the
 same *qualitative* claims hold on the one dataset this repo actually has,
-rather than leaving them as an unverified claim repeated only in prose
-(notebook.ipynb §4.3 previously did exactly that).
+rather than leaving them as an unverified claim repeated only in prose.
 
 Model/setting choice: graphsage_mean, supervised. K itself is only
 adjustable for the mean aggregator -- supervised_train.py's other three
@@ -33,7 +32,7 @@ doesn't specify what S3 it used for K=3, so this mirrors S2 by symmetry).
 Neighborhood sample size is varied via --samples_1=--samples_2=S at fixed
 K=2 -- note this is symmetric (S1=S2=S), so it does NOT reuse the K sweep's
 K=2 point, which is the code's actual (asymmetric) default S1=25, S2=10, not
-S1=S2=25. Both dimensions share log_dir()'s new `_S<s1>-<s2>-<s3>`
+S1=S2=25. Both dimensions share log_dir()'s `_S<s1>-<s2>-<s3>`
 disambiguation (see supervised_train.py) so distinct configs never collide;
 only the K sweep's K=2 entry exactly matches the existing single default
 run's (25, 10, 0) and is reused rather than retrained (like

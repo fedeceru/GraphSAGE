@@ -99,6 +99,7 @@ not, exactly the structural-reliance gap Theorem 1 predicts.
 ```
 GraphSAGE.pdf                                      the paper
 notebook.ipynb                                     paper walkthrough + real reproduced results
+plotting.py                                        every matplotlib figure notebook.ipynb draws, kept out of its narrative
 requirements.txt           
 
 src/graphsage/                                     GraphSAGE implementation
@@ -163,9 +164,7 @@ of the paper this reproduction addresses. Briefly, in the order they run:
   `results/best_hparams_ppi.json`; `compile_results.py` and
   `notebook.ipynb` §8 read it automatically.
 - **`multiseed_ppi_experiments.py`** -- repeats a variant under a second
-  `--seed` (this repo's `supervised_train.py`/`unsupervised_train.py` used
-  to hardcode `seed = 123`, so no repeat was previously possible at all) and
-  reports mean/std. Writes `results/seed_variance_ppi.json`.
+  `--seed` and reports mean/std. Writes `results/seed_variance_ppi.json`.
 - **`sensitivity_ppi_experiments.py`** -- Section 4.3's K-sensitivity claim
   (`--k_only` here: the neighborhood-sample-size half is dropped to fit the
   time budget). Writes `results/sensitivity_ppi.json`, read by

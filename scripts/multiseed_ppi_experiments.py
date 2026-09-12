@@ -3,14 +3,11 @@ Repeats each PPI variant under several random seeds and reports mean +/- std,
 instead of the single, uncontrolled-seed point estimate every other script in
 this repo produces.
 
-Neither `run_ppi_experiments.py` nor `sweep_ppi_experiments.py` could do this
-before `--seed` existed: `supervised_train.py` / `unsupervised_train.py` used
-to hardcode `seed = 123`, so there was no way to ask for a second, independent
-training run of the same config. With `--seed` now a flag (and `log_dir()`
-appending `_seed<N>` for any seed other than 123, so repeats don't collide
-with each other or with the existing seed=123 runs), this script trains one
-run per value in `--seeds` (default {123, 124, 125}) per (model, setting)
-and aggregates their test F1.
+This relies on `supervised_train.py` / `unsupervised_train.py`'s `--seed`
+flag and `log_dir()` appending `_seed<N>` for any seed other than 123, so
+repeats don't collide with each other or with the existing seed=123 runs.
+This script trains one run per value in `--seeds` (default {123, 124, 125})
+per (model, setting) and aggregates their test F1.
 
 This script's own defaults (3 seeds, full epochs/steps) describe a broader
 study than this repo runs -- `scripts/run_ppi_experiments_scaled.py` invokes

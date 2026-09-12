@@ -136,7 +136,6 @@ def run_random_walks(G, nodes, num_walks=N_WALKS):
     return pairs
 
 if __name__ == "__main__":
-    """ Run random walks """
     graph_file = sys.argv[1]
     out_file = sys.argv[2]
     G_data = json.load(open(graph_file))

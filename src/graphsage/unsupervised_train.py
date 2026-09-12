@@ -18,17 +18,14 @@ directory under ``--base_log_dir`` (see ``log_dir()`` below); these are what
 Every run also writes ``metrics.csv`` (step, epoch, train/val loss and MRR)
 into the same directory -- a structured counterpart to the console log,
 meant for programmatic plotting (e.g. notebook.ipynb's training-dynamics
-charts) without having to parse printed text. This is purely an added
-side-effect (like the existing TensorBoard summary writer below) and never
-changes what gets computed.
+charts) without having to parse printed text.
 
 Passing ``--embedding_snapshot_steps`` (default: empty, i.e. disabled)
 additionally dumps embeddings for every node at the given training steps --
 e.g. ``--embedding_snapshot_steps 0,100,1000,5000`` -- under
 ``<log_dir>/snapshots/step_<N>/``, on top of the usual final embeddings.
 This is what notebook.ipynb's embedding-progression visuals (PCA/t-SNE
-across training) consume; with the flag left empty, a run behaves exactly
-like the original paper's script.
+across training) consume; leaving the flag empty disables it entirely.
 """
 from __future__ import division
 from __future__ import print_function
@@ -50,7 +47,6 @@ from graphsage.utils import load_data
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 
-# Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
@@ -61,8 +57,7 @@ flags.DEFINE_string('model', 'graphsage', 'model names. See README for possible 
 flags.DEFINE_float('learning_rate', 0.00001, 'initial learning rate.')
 flags.DEFINE_string("model_size", "small", "Can be big or small; model specific def'ns")
 flags.DEFINE_string('train_prefix', '', 'name of the object file that stores the training data. must be specified.')
-flags.DEFINE_integer('seed', 123, 'random seed for numpy/tensorflow. Was previously hardcoded '
-                      '(every run used exactly one, uncontrolled draw); exposing it lets '
+flags.DEFINE_integer('seed', 123, 'random seed for numpy/tensorflow. Lets '
                       'scripts/multiseed_ppi_experiments.py repeat a variant under several '
                       'seeds to report mean +/- std instead of a single-seed point estimate. '
                       'A non-default seed is appended to log_dir() below so repeated runs '
@@ -88,7 +83,7 @@ flags.DEFINE_boolean('save_embeddings', True, 'whether to save embeddings for al
 flags.DEFINE_string('embedding_snapshot_steps', '',
         "Comma-separated step indices at which to additionally dump embeddings for every "
         "node during training (e.g. '0,100,1000,5000'), for visualizing how the embedding "
-        "space evolves. Empty (default) disables this and matches the original script exactly.")
+        "space evolves. Empty (default) disables this.")
 flags.DEFINE_string('base_log_dir', '.', 'base directory for logging and saving embeddings')
 flags.DEFINE_integer('validate_iter', 5000, "how often to run a validation minibatch.")
 flags.DEFINE_integer('validate_batch_size', 256, "how many nodes per validation sample.")
@@ -98,9 +93,9 @@ flags.DEFINE_integer('max_total_steps', 10**10, "Maximum total number of iterati
 
 os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.gpu)
 
-# Set random seed (moved here, after FLAGS.seed is declared above, since
 # tf.app.flags/absl only resolves sys.argv -- and therefore FLAGS.seed's
-# actual value -- on first attribute access).
+# actual value -- on first attribute access, so this must come after every
+# flags.DEFINE_* call above.
 np.random.seed(FLAGS.seed)
 tf.set_random_seed(FLAGS.seed)
 
@@ -113,20 +108,16 @@ def log_dir():
 
     The learning rate is formatted in scientific notation (not fixed-point)
     because Appendix C's unsupervised learning-rate sweep goes down to
-    {2e-6, 2e-7, 2e-8}: at 6 decimal places (the previous format) both 2e-7
-    and 2e-8 round to "0.000000" and would silently collide in the same
-    directory, each overwriting the other's logs/embeddings. Scientific
-    notation keeps every magnitude distinct regardless of how small a future
-    sweep's learning rate gets.
+    {2e-6, 2e-7, 2e-8}, magnitudes fixed-point rounding can't tell apart at a
+    reasonable number of decimal places; scientific notation keeps every
+    magnitude distinct.
 
     A non-default ``--seed`` additionally appends ``_seed<N>`` (mirrors
     supervised_train.py's log_dir()), so scripts/multiseed_ppi_experiments.py
     can run several seeds of the same (model, size, lr) without them
     overwriting each other or the seed=123 baseline run. Likewise, a
-    non-default (samples_1, samples_2) appends ``_S<s1>-<s2>`` (same bug
-    class as the seed case: log_dir() previously ignored these flags
-    entirely, so two runs differing only in sample size would have silently
-    collided)."""
+    non-default (samples_1, samples_2) appends ``_S<s1>-<s2>``, since two
+    runs differing only in sample size would otherwise collide."""
     log_dir = FLAGS.base_log_dir + "/unsup-" + FLAGS.train_prefix.split("/")[-2]
     log_dir += "/{model:s}_{model_size:s}_{lr:.2e}".format(
             model=FLAGS.model,
@@ -141,7 +132,6 @@ def log_dir():
         os.makedirs(log_dir)
     return log_dir
 
-# Define model evaluation function
 def evaluate(sess, model, minibatch_iter, size=None):
     """Quick MRR/loss evaluation on a random sample of `size` val edges --
     used for the periodic progress logging during training."""
@@ -239,15 +229,15 @@ def train(train_data, test_data=None):
             max_degree=FLAGS.max_degree, 
             num_neg_samples=FLAGS.neg_sample_size,
             context_pairs = context_pairs)
-    # See the matching comment in supervised_train.py: `adj_info` is a
-    # tf.Variable so it can be swapped between train-only / full-graph
-    # adjacency without rebuilding the graph.
+    # `adj_info` is a tf.Variable (not a placeholder fed every step) holding
+    # the padded adjacency table built by the minibatch iterator, so it can
+    # be swapped between the train-only and full-graph versions with a
+    # single tf.assign -- see train_adj_info/val_adj_info below.
     adj_info_ph = tf.placeholder(tf.int32, shape=minibatch.adj.shape)
     adj_info = tf.Variable(adj_info_ph, trainable=False, name="adj_info")
 
     # ---- model selection -----------------------------------------------
     if FLAGS.model == 'graphsage_mean':
-        # Create model
         sampler = UniformNeighborSampler(adj_info)
         layer_infos = [SAGEInfo("node", sampler, FLAGS.samples_1, FLAGS.dim_1),
                             SAGEInfo("node", sampler, FLAGS.samples_2, FLAGS.dim_2)]
@@ -261,7 +251,6 @@ def train(train_data, test_data=None):
                                      identity_dim = FLAGS.identity_dim,
                                      logging=True)
     elif FLAGS.model == 'gcn':
-        # Create model
         sampler = UniformNeighborSampler(adj_info)
         layer_infos = [SAGEInfo("node", sampler, FLAGS.samples_1, 2*FLAGS.dim_1),
                             SAGEInfo("node", sampler, FLAGS.samples_2, 2*FLAGS.dim_2)]
@@ -345,21 +334,18 @@ def train(train_data, test_data=None):
     merged = tf.summary.merge_all()
     summary_writer = tf.summary.FileWriter(log_dir(), sess.graph)
      
-    # Init variables
     sess.run(tf.global_variables_initializer(), feed_dict={adj_info_ph: minibatch.adj})
 
     # Structured, per-step counterpart to the console log below (step, epoch,
-    # train/val loss and MRR) -- written unconditionally, same spirit as the
-    # TensorBoard summary_writer above: an observational side effect that
-    # doesn't change what gets computed, meant for programmatic plotting
-    # (e.g. notebook.ipynb) without parsing printed text.
+    # train/val loss and MRR), meant for programmatic plotting (e.g.
+    # notebook.ipynb) without parsing printed text.
     metrics_fp = open(os.path.join(log_dir(), "metrics.csv"), "w")
     metrics_writer = csv.writer(metrics_fp)
     metrics_writer.writerow(["step", "epoch", "train_loss", "train_mrr", "val_loss", "val_mrr"])
 
     # ---- optional embedding snapshots (training-progression visuals) ------
     # See --embedding_snapshot_steps above: empty by default, so none of this
-    # runs (and behavior is identical to the original script) unless opted in.
+    # runs unless opted in.
     remaining_snapshots = sorted({int(s) for s in FLAGS.embedding_snapshot_steps.split(",") if s.strip() != ""})
 
     def dump_embedding_snapshot(step, train_adj_info, val_adj_info):
@@ -402,12 +388,11 @@ def train(train_data, test_data=None):
             train_cost = outs[2]
             train_mrr = outs[5]
             if train_shadow_mrr is None:
-                train_shadow_mrr = train_mrr#
+                train_shadow_mrr = train_mrr
             else:
                 train_shadow_mrr -= (1-0.99) * (train_shadow_mrr - train_mrr)
 
             if iter % FLAGS.validate_iter == 0:
-                # Validation
                 sess.run(val_adj_info.op)
                 val_cost, ranks, val_mrr, duration  = evaluate(sess, model, minibatch, size=FLAGS.validate_batch_size)
                 sess.run(train_adj_info.op)
@@ -420,7 +405,6 @@ def train(train_data, test_data=None):
             if total_steps % FLAGS.print_every == 0:
                 summary_writer.add_summary(outs[0], total_steps)
     
-            # Print results
             avg_time = (avg_time * total_steps + time.time() - t) / (total_steps + 1)
 
             if total_steps % FLAGS.print_every == 0:

@@ -43,10 +43,7 @@ from graphsage.utils import load_data  # noqa: E402
 
 SEED = 123
 
-# See the module docstring: reproduces scikit-learn's pre-0.19 SGDClassifier
-# default (a fixed 5 passes over the data, no early stopping) instead of the
-# installed version's current default (up to 1000 passes with tol-based
-# early stopping), which is what "default settings" meant in the paper's era.
+# See module docstring for rationale.
 ERA_MATCHED_SGD_PARAMS = dict(max_iter=5, tol=None)
 
 
@@ -67,7 +64,7 @@ def get_split_labels(G, id_map, class_map, feats):
 
 def random_baseline(y_train, y_test, seed=SEED):
     rng = np.random.RandomState(seed)
-    pos_rate = y_train.mean(axis=0)  # per-label positive rate on train
+    pos_rate = y_train.mean(axis=0)
     y_pred = (rng.rand(*y_test.shape) < pos_rate[None, :]).astype(int)
     return {
         "f1_micro": f1_score(y_test, y_pred, average="micro"),

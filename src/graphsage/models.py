@@ -82,11 +82,9 @@ class Model(object):
             self.activations.append(hidden)
         self.outputs = self.activations[-1]
 
-        # Store model variables for easy access
         variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.name)
         self.vars = {var.name: var for var in variables}
 
-        # Build metrics
         self._loss()
         self._accuracy()
 
@@ -134,23 +132,21 @@ class GeneralizedModel(Model):
         with tf.variable_scope(self.name):
             self._build()
 
-        # Store model variables for easy access
         variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.name)
         self.vars = {var.name: var for var in variables}
 
-        # Build metrics
         self._loss()
         self._accuracy()
 
         self.opt_op = self.optimizer.minimize(self.loss)
 
-# SAGEInfo is a namedtuple that specifies the parameters 
+# SAGEInfo is a namedtuple that specifies the parameters
 # of the recursive GraphSAGE layers
 SAGEInfo = namedtuple("SAGEInfo",
-    ['layer_name', # name of the layer (to get feature embedding etc.)
-     'neigh_sampler', # callable neigh_sampler constructor
+    ['layer_name',
+     'neigh_sampler',
      'num_samples',
-     'output_dim' # the output (i.e., hidden) dimension
+     'output_dim'
     ])
 
 class SampleAndAggregate(GeneralizedModel):
@@ -164,15 +160,12 @@ class SampleAndAggregate(GeneralizedModel):
             **kwargs):
         '''
         Args:
-            - placeholders: Stanford TensorFlow placeholder object.
-            - features: Numpy array with node features. 
+            - features: Numpy array with node features.
                         NOTE: Pass a None object to train in featureless mode (identity features for nodes)!
             - adj: Numpy array with adjacency lists (padded with random re-samples)
-            - degrees: Numpy array with node degrees. 
-            - layer_infos: List of SAGEInfo namedtuples that describe the parameters of all 
+            - degrees: Numpy array with node degrees.
+            - layer_infos: List of SAGEInfo namedtuples that describe the parameters of all
                    the recursive layers. See SAGEInfo definition above.
-            - concat: whether to concatenate during recursive iterations
-            - aggregator_type: how to aggregate neighbor information
             - model_size: one of "small" and "big"
             - identity_dim: Set to positive int to use identity features (slow and cannot generalize, but better accuracy)
         '''
@@ -381,7 +374,6 @@ class SampleAndAggregate(GeneralizedModel):
     def build(self):
         self._build()
 
-        # TF graph management
         self._loss()
         self._accuracy()
         self.loss = self.loss / tf.cast(self.batch_size, tf.float32)
@@ -435,8 +427,6 @@ class Node2VecModel(GeneralizedModel):
         Args:
             dict_size: the total number of nodes.
             degrees: numpy array of node degrees, ordered as in the data's id_map
-            nodevec_dim: dimension of the vector representation of node.
-            lr: learning rate of optimizer.
         """
 
         super(Node2VecModel, self).__init__(**kwargs)
@@ -489,7 +479,6 @@ class Node2VecModel(GeneralizedModel):
 
     def build(self):
         self._build()
-        # TF graph management
         self._loss()
         self._minimize()
         self._accuracy()

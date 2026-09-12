@@ -23,14 +23,11 @@ class SupervisedGraphsage(models.SampleAndAggregate):
                 **kwargs):
         '''
         Args:
-            - placeholders: Stanford TensorFlow placeholder object.
             - features: Numpy array with node features.
             - adj: Numpy array with adjacency lists (padded with random re-samples)
-            - degrees: Numpy array with node degrees. 
-            - layer_infos: List of SAGEInfo namedtuples that describe the parameters of all 
+            - degrees: Numpy array with node degrees.
+            - layer_infos: List of SAGEInfo namedtuples that describe the parameters of all
                    the recursive layers. See SAGEInfo definition above.
-            - concat: whether to concatenate during recursive iterations
-            - aggregator_type: how to aggregate neighbor information
             - model_size: one of "small" and "big"
             - sigmoid_loss: Set to true if nodes can belong to multiple classes
         '''
@@ -100,7 +97,6 @@ class SupervisedGraphsage(models.SampleAndAggregate):
         self.node_pred = layers.Dense(dim_mult*self.dims[-1], self.num_classes,
                 dropout=self.placeholders['dropout'],
                 act=lambda x : x)
-        # TF graph management
         self.node_preds = self.node_pred(self.outputs1)
 
         self._loss()

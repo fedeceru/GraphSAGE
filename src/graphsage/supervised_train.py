@@ -16,9 +16,7 @@ run-specific directory under ``--base_log_dir`` (see ``log_dir()`` below).
 Every run also writes ``metrics.csv`` (step, epoch, train/val loss and F1)
 into the same directory -- a structured counterpart to the console log,
 meant for programmatic plotting (e.g. notebook.ipynb's training-dynamics
-charts) without having to parse printed text. This is purely an added
-side-effect (like the existing TensorBoard summary writer below) and never
-changes what gets computed.
+charts) without having to parse printed text.
 """
 from __future__ import division
 from __future__ import print_function
@@ -43,7 +41,6 @@ from graphsage.utils import load_data
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 
-# Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
@@ -54,8 +51,7 @@ flags.DEFINE_string('model', 'graphsage_mean', 'model names. See README for poss
 flags.DEFINE_float('learning_rate', 0.01, 'initial learning rate.')
 flags.DEFINE_string("model_size", "small", "Can be big or small; model specific def'ns")
 flags.DEFINE_string('train_prefix', '', 'prefix identifying training data. must be specified.')
-flags.DEFINE_integer('seed', 123, 'random seed for numpy/tensorflow. Was previously hardcoded '
-                      '(every run used exactly one, uncontrolled draw); exposing it lets '
+flags.DEFINE_integer('seed', 123, 'random seed for numpy/tensorflow. Lets '
                       'scripts/multiseed_ppi_experiments.py repeat a variant under several '
                       'seeds to report mean +/- std instead of a single-seed point estimate. '
                       'A non-default seed is appended to log_dir() below so repeated runs '
@@ -86,9 +82,9 @@ flags.DEFINE_integer('max_total_steps', 10**10, "Maximum total number of iterati
 
 os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.gpu)
 
-# Set random seed (moved here, after FLAGS.seed is declared above, since
 # tf.app.flags/absl only resolves sys.argv -- and therefore FLAGS.seed's
-# actual value -- on first attribute access).
+# actual value -- on first attribute access, so this must come after every
+# flags.DEFINE_* call above.
 np.random.seed(FLAGS.seed)
 tf.set_random_seed(FLAGS.seed)
 
@@ -106,7 +102,6 @@ def calc_f1(y_true, y_pred):
         y_pred[y_pred <= 0.5] = 0
     return metrics.f1_score(y_true, y_pred, average="micro"), metrics.f1_score(y_true, y_pred, average="macro")
 
-# Define model evaluation function
 def evaluate(sess, model, minibatch_iter, size=None):
     """Quick evaluation on a random sample of `size` val (or test) nodes --
     used for the periodic progress logging during training. See
@@ -130,13 +125,10 @@ def log_dir():
     (model, size, lr) land in their own directories instead of overwriting
     each other. Likewise, a non-default (samples_1, samples_2, samples_3) --
     i.e. a different K or neighborhood sample size, varied by
-    scripts/sensitivity_ppi_experiments.py -- appends ``_S<s1>-<s2>-<s3>``,
-    since two runs that differ only in those flags would otherwise silently
-    collide (this was a real, latent bug: log_dir() previously ignored them
-    entirely). The defaults (seed=123, samples=(25,10,0)) keep the original,
-    un-suffixed path -- every existing consumer of this path
-    (compile_results.py, sweep_ppi_experiments.py, notebook.ipynb) keeps
-    working unchanged."""
+    scripts/sensitivity_ppi_experiments.py -- appends ``_S<s1>-<s2>-<s3>``.
+    The defaults (seed=123, samples=(25,10,0)) keep the plain, un-suffixed
+    path that compile_results.py, sweep_ppi_experiments.py and
+    notebook.ipynb all expect."""
     log_dir = FLAGS.base_log_dir + "/sup-" + FLAGS.train_prefix.split("/")[-2]
     log_dir += "/{model:s}_{model_size:s}_{lr:0.4f}".format(
             model=FLAGS.model,
@@ -233,7 +225,6 @@ def train(train_data, test_data=None):
     # averaging rather than concatenation, so it needs a wider hidden size to
     # match parameter count with the other variants (see paper Section 3.3).
     if FLAGS.model == 'graphsage_mean':
-        # Create model
         sampler = UniformNeighborSampler(adj_info)
         if FLAGS.samples_3 != 0:
             layer_infos = [SAGEInfo("node", sampler, FLAGS.samples_1, FLAGS.dim_1),
@@ -255,7 +246,6 @@ def train(train_data, test_data=None):
                                      identity_dim = FLAGS.identity_dim,
                                      logging=True)
     elif FLAGS.model == 'gcn':
-        # Create model
         sampler = UniformNeighborSampler(adj_info)
         layer_infos = [SAGEInfo("node", sampler, FLAGS.samples_1, 2*FLAGS.dim_1),
                             SAGEInfo("node", sampler, FLAGS.samples_2, 2*FLAGS.dim_2)]
@@ -334,14 +324,11 @@ def train(train_data, test_data=None):
     merged = tf.summary.merge_all()
     summary_writer = tf.summary.FileWriter(log_dir(), sess.graph)
      
-    # Init variables
     sess.run(tf.global_variables_initializer(), feed_dict={adj_info_ph: minibatch.adj})
 
     # Structured, per-step counterpart to the console log below (step, epoch,
-    # train/val loss and F1) -- written unconditionally, same spirit as the
-    # TensorBoard summary_writer above: an observational side effect that
-    # doesn't change what gets computed, meant for programmatic plotting
-    # (e.g. notebook.ipynb) without parsing printed text.
+    # train/val loss and F1), meant for programmatic plotting (e.g.
+    # notebook.ipynb) without parsing printed text.
     metrics_fp = open(os.path.join(log_dir(), "metrics.csv"), "w")
     metrics_writer = csv.writer(metrics_fp)
     metrics_writer.writerow(["step", "epoch", "train_loss", "train_f1_micro", "train_f1_macro",
@@ -375,7 +362,6 @@ def train(train_data, test_data=None):
             train_cost = outs[2]
 
             if iter % FLAGS.validate_iter == 0:
-                # Validation
                 sess.run(val_adj_info.op)
                 if FLAGS.validate_batch_size == -1:
                     val_cost, val_f1_mic, val_f1_mac, duration = incremental_evaluate(sess, model, minibatch, FLAGS.batch_size)
@@ -387,7 +373,6 @@ def train(train_data, test_data=None):
             if total_steps % FLAGS.print_every == 0:
                 summary_writer.add_summary(outs[0], total_steps)
     
-            # Print results
             avg_time = (avg_time * total_steps + time.time() - t) / (total_steps + 1)
 
             if total_steps % FLAGS.print_every == 0:

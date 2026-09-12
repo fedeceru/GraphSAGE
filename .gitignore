@@ -34,6 +34,9 @@ checkpoints/
 results/_sweep_tmp/
 results/_seed_tmp/
 
+# Personal exam/presentation prep notes -- not a project deliverable
+STUDY_GUIDE_IT.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

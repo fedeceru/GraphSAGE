@@ -122,10 +122,8 @@ class Dense(Layer):
         # tf.nn.dropout, so self.dropout=0 (the default) means "no dropout"
         x = tf.nn.dropout(x, 1-self.dropout)
 
-        # transform
         output = tf.matmul(x, self.vars['weights'])
 
-        # bias
         if self.bias:
             output += self.vars['bias']
 

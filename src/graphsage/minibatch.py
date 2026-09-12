@@ -49,11 +49,8 @@ class EdgeMinibatchIterator(object):
     """ This minibatch iterator iterates over batches of sampled edges or
     random pairs of co-occuring edges.
 
-    G -- networkx graph
     id2idx -- dict mapping node ids to index in feature tensor
-    placeholders -- tensorflow placeholders object
     context_pairs -- if not none, then a list of co-occuring node pairs (from random walks)
-    batch_size -- size of the minibatches
     max_degree -- maximum size of the downsampled adjacency lists
     n2v_retrain -- signals that the iterator is being used to add new embeddings to a n2v model
     fixed_n2v -- signals that the iterator is being used to retrain n2v with only existing nodes as context
@@ -235,12 +232,9 @@ class NodeMinibatchIterator(object):
     """
     This minibatch iterator iterates over nodes for supervised learning.
 
-    G -- networkx graph
     id2idx -- dict mapping node ids to integer values indexing feature tensor
-    placeholders -- standard tensorflow placeholders object for feeding
     label_map -- map from node ids to class values (integer or list)
     num_classes -- number of output classes
-    batch_size -- size of the minibatches
     max_degree -- maximum size of the downsampled adjacency lists
 
     Structurally this mirrors EdgeMinibatchIterator above (same padded

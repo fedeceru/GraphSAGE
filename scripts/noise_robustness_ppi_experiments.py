@@ -7,10 +7,7 @@ node features, the *pooling* aggregator can approximate a node's clustering
 coefficient -- i.e. it can learn to exploit graph structure, not just
 feature content. Figure 3 backs this empirically by progressively replacing
 the feature matrix with Gaussian noise and showing GraphSAGE-pool degrades
-more gracefully than GraphSAGE-GCN and the raw-features baseline. Until this
-script, that empirical check existed in this repo only as prose
-(notebook.ipynb §9, "Theoretical analysis (overview)") describing the
-paper's own Figure 3 -- nothing here actually ran it.
+more gracefully than GraphSAGE-GCN and the raw-features baseline.
 
 Figure 3 itself is drawn "on the citation data" specifically, which is out
 of scope for this PPI-only reproduction, so this script re-runs the same

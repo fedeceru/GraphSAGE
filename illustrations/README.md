@@ -19,12 +19,10 @@ asset, and nothing here should ever be mistaken for a measured result.
 
 ## Regenerating these images
 
-The matplotlib code that produced them has been deliberately removed from
-`notebook.ipynb` (it has no dependency on any PPI data or trained model, so
-it doesn't belong in the reproduction pipeline) and is preserved here instead,
-for the rare case one of these diagrams needs to be redrawn or restyled.
-Running either snippet from the repo root (with the project's `.venv`
-active) regenerates the corresponding file in this folder.
+This code has no dependency on any PPI data or trained model, so it lives
+here rather than in the reproduction notebook. Running either snippet from
+the repo root (with the project's `.venv` active) regenerates the
+corresponding file in this folder.
 
 ### `pipeline_illustration.png`
 

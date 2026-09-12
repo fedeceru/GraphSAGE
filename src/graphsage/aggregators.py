@@ -80,7 +80,6 @@ class MeanAggregator(Layer):
             # CONCAT(h_v^{k-1}, h_{N(v)}^k) from line 5 of Algorithm 1
             output = tf.concat([from_self, from_neighs], axis=1)
 
-        # bias
         if self.bias:
             output += self.vars['bias']
 
@@ -138,7 +137,6 @@ class GCNAggregator(Layer):
         # [nodes] x [out_dim]
         output = tf.matmul(means, self.vars['weights'])
 
-        # bias
         if self.bias:
             output += self.vars['bias']
        
@@ -229,7 +227,6 @@ class MaxPoolingAggregator(Layer):
         else:
             output = tf.concat([from_self, from_neighs], axis=1)
 
-        # bias
         if self.bias:
             output += self.vars['bias']
 
@@ -313,7 +310,6 @@ class MeanPoolingAggregator(Layer):
         else:
             output = tf.concat([from_self, from_neighs], axis=1)
 
-        # bias
         if self.bias:
             output += self.vars['bias']
        
@@ -415,7 +411,6 @@ class SeqAggregator(Layer):
         else:
             output = tf.concat([from_self, from_neighs], axis=1)
 
-        # bias
         if self.bias:
             output += self.vars['bias']
 
