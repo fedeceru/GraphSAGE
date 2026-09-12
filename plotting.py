@@ -108,6 +108,58 @@ def _darken(hex_color, factor=0.55):
     return (r * (1 - factor), g * (1 - factor), b * (1 - factor))
 
 
+def _panel_path(save_path, suffix):
+    """Derive an individual-panel filename from a combined figure's
+    ``save_path``, e.g. ``results/ppi_embedding_pca.png`` + ``"degree"``
+    -> ``results/ppi_embedding_pca_degree.png``. Callers are
+    responsible for any numeric zero-padding inside ``suffix`` itself
+    (e.g. ``f"step_{step:05d}"``)."""
+    stem, ext = os.path.splitext(save_path)
+    return f"{stem}_{suffix}{ext}"
+
+
+def _save_standalone_panel(draw_fn, save_path, suffix, figsize, dpi=140, bbox_inches="tight"):
+    """Render one logical panel on its own, self-contained figure and save
+    it next to the combined sheet's ``save_path`` (see ``_panel_path``), so
+    every subplot in this module can also be used individually (e.g. dropped
+    into a single presentation slide) instead of only ever appearing as part
+    of a multi-panel sheet.
+
+    ``draw_fn`` is a one-argument callable ``draw_fn(ax)`` that draws
+    everything onto the given (fresh, single) Axes -- it must not close over
+    an outer multi-panel figure, since none exists here. No-ops if
+    ``save_path`` is falsy (mirrors every combined figure's own
+    ``if save_path: fig.savefig(...)`` convention). The standalone figure is
+    closed (never shown) so it doesn't also pop up inline next to the
+    combined sheet."""
+    if not save_path:
+        return
+    fig, ax = plt.subplots(figsize=figsize)
+    draw_fn(ax)
+    fig.tight_layout()
+    fig.savefig(_panel_path(save_path, suffix), dpi=dpi, bbox_inches=bbox_inches)
+    plt.close(fig)
+
+
+def _draw_f1_panel(ax, df, x, width, colors, col_paper, col_repro, title, show_legend):
+    """Draw one F1-comparison panel (paper vs. reproduced bars for either the
+    unsupervised or supervised setting) onto ``ax``. Factored out of
+    ``plot_f1_comparison`` so the exact same drawing code can build either
+    panel of the combined side-by-side sheet or a standalone single-panel
+    export (see ``_save_standalone_panel``)."""
+    ax.bar(x - width / 2, df[col_paper], width, color=colors, alpha=0.4)
+    ax.bar(x + width / 2, df[col_repro], width, color=colors, alpha=0.95)
+    ax.set_xticks(x)
+    ax.set_xticklabels(df["Name"], rotation=40, ha="right")
+    ax.set_title(title)
+    ax.set_ylabel("Micro F1")
+    _light_grid(ax)
+    if show_legend:
+        handles = [Patch(facecolor="#4a4a4a", alpha=0.4, label="Paper"),
+                   Patch(facecolor="#4a4a4a", alpha=0.95, label="Reproduced")]
+        ax.legend(handles=handles, loc="upper left")
+
+
 def plot_f1_comparison(df, save_path=None):
     """§8 bar chart: reproduced vs. paper Micro F1, one panel each for the
     unsupervised and supervised settings. Bars are colored by aggregator
@@ -119,32 +171,35 @@ def plot_f1_comparison(df, save_path=None):
     ``df`` must have the columns produced by notebook.ipynb's results-table
     cell: ``"Name"``, ``"Unsup. F1 (reproduced)"``, ``"Unsup. F1 (paper)"``,
     ``"Sup. F1 (reproduced)"``, ``"Sup. F1 (paper)"``.
+
+    If ``save_path`` is given, each panel is also saved on its own (see
+    ``_save_standalone_panel``) as ``<save_path stem>_unsupervised.png`` /
+    ``_supervised.png``, so either half can be used on its own (e.g. in a
+    single presentation slide) without cropping the combined figure.
     """
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
     x = np.arange(len(df))
     width = 0.35
     colors = [_bar_color(n) for n in df["Name"]]
 
-    for i, (ax, col_repro, col_paper, title) in enumerate([
-        (axes[0], "Unsup. F1 (reproduced)", "Unsup. F1 (paper)", "Unsupervised F1 — PPI"),
-        (axes[1], "Sup. F1 (reproduced)", "Sup. F1 (paper)", "Supervised F1 — PPI"),
-    ]):
-        ax.bar(x - width / 2, df[col_paper], width, color=colors, alpha=0.4)
-        ax.bar(x + width / 2, df[col_repro], width, color=colors, alpha=0.95)
-        ax.set_xticks(x)
-        ax.set_xticklabels(df["Name"], rotation=40, ha="right")
-        ax.set_title(title)
-        ax.set_ylabel("Micro F1")
-        _light_grid(ax)
-        if i == 0:
-            handles = [Patch(facecolor="#4a4a4a", alpha=0.4, label="Paper"),
-                       Patch(facecolor="#4a4a4a", alpha=0.95, label="Reproduced")]
-            ax.legend(handles=handles, loc="upper left")
+    panels = [
+        ("unsupervised", axes[0], "Unsup. F1 (reproduced)", "Unsup. F1 (paper)", "Unsupervised F1 — PPI"),
+        ("supervised", axes[1], "Sup. F1 (reproduced)", "Sup. F1 (paper)", "Supervised F1 — PPI"),
+    ]
+    for i, (_, ax, col_repro, col_paper, title) in enumerate(panels):
+        _draw_f1_panel(ax, df, x, width, colors, col_paper, col_repro, title, show_legend=(i == 0))
 
     fig.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=140)
     plt.show()
+
+    if save_path:
+        for suffix, _, col_repro, col_paper, title in panels:
+            _save_standalone_panel(
+                lambda ax, cr=col_repro, cp=col_paper, t=title: _draw_f1_panel(
+                    ax, df, x, width, colors, cp, cr, t, show_legend=True),
+                save_path, suffix, figsize=(6.5, 5))
     return fig
 
 
@@ -205,14 +260,13 @@ def _read_metrics_csv(csv_path):
     return cols
 
 
-def _plot_curve_row(axes_row, models, log_dirs, train_col, val_col, ylabel,
-                     xlabel=None, show_legend=False):
-    """Draw one row of a training-curve sheet: one panel per (model_flag,
-    display_name) in ``models``, each plotting ``train_col``/``val_col``
-    from that model's ``metrics.csv``, with a faint vertical line at each
-    new epoch boundary. Shared by ``plot_loss_curves`` and
-    ``plot_performance_curves`` -- they differ only in which columns they
-    read.
+def _draw_curve_panel(ax, model_flag, display_name, log_dirs, train_col, val_col, ylabel,
+                       xlabel=None, show_legend=False):
+    """Draw one training-curve panel (one aggregator's train/val curve for
+    one metric) onto ``ax``, reading ``model_flag``'s ``metrics.csv`` from
+    ``log_dirs``. Factored out of ``_plot_curve_row`` so the exact same
+    drawing code can build one cell of the combined grid or a standalone
+    single-panel export (see ``_save_standalone_panel``).
 
     Train and val are genuinely different kinds of signal here -- train is
     logged every step (dense, noisy), val only refreshes once per epoch
@@ -225,50 +279,76 @@ def _plot_curve_row(axes_row, models, log_dirs, train_col, val_col, ylabel,
     the same model color, connected by a thin dotted line -- reading as
     "discrete measurement" rather than a second continuous curve.
     """
+    metrics = _read_metrics_csv(os.path.join(log_dirs[model_flag], "metrics.csv"))
+    steps = metrics.get("step", [])
+    epochs = metrics.get("epoch", [])
+    color = MODEL_COLORS[display_name]
+    dark = _darken(color)
+
+    seen_epochs = set()
+    for step, epoch in zip(steps, epochs):
+        if epoch not in seen_epochs:
+            seen_epochs.add(epoch)
+            if len(seen_epochs) > 1:
+                ax.axvline(step, color="#e1e0d9", lw=0.8, zorder=0)
+
+    train_vals = metrics.get(train_col, [])
+    ax.plot(steps, train_vals, color=color, lw=0.6, alpha=0.25, zorder=1)
+    ax.plot(steps, _ema(train_vals), color=color, lw=1.8, zorder=3)
+
+    val_vals = metrics.get(val_col, [])
+    val_change_steps, val_change_vals = [], []
+    for step, v in zip(steps, val_vals):
+        if not val_change_vals or v != val_change_vals[-1]:
+            val_change_steps.append(step)
+            val_change_vals.append(v)
+    if val_change_steps and val_change_steps[-1] != steps[-1]:
+        # extend the last known value flat to the right edge -- it's
+        # still in effect, just not re-measured again after this point
+        line_steps = val_change_steps + [steps[-1]]
+        line_vals = val_change_vals + [val_change_vals[-1]]
+    else:
+        line_steps, line_vals = val_change_steps, val_change_vals
+    ax.plot(line_steps, line_vals, color=dark, lw=1.0, ls=":", drawstyle="steps-post", zorder=4)
+    ax.plot(val_change_steps, val_change_vals, lw=0, marker="o", ms=4.5,
+             mfc="white", mec=dark, mew=1.2, zorder=5)
+
+    ax.set_title(display_name, color=color, fontsize=10)
+    ax.set_ylabel(ylabel, fontsize=9)
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=8)
+    if show_legend:
+        ax.legend([Line2D([0], [0], color="#4a4a4a", lw=1.8),
+                   Line2D([0], [0], color="#4a4a4a", lw=1.0, ls=":", marker="o", ms=4.5,
+                          mfc="white", mec="#4a4a4a", mew=1.2)],
+                  ["train (smoothed)", "val"], loc="upper right", fontsize=7)
+
+
+def _plot_curve_row(axes_row, models, log_dirs, train_col, val_col, ylabel,
+                     xlabel=None, show_legend=False):
+    """Draw one row of a training-curve sheet: one panel per (model_flag,
+    display_name) in ``models``, each plotting ``train_col``/``val_col``
+    from that model's ``metrics.csv``. Shared by ``plot_loss_curves`` and
+    ``plot_performance_curves`` -- they differ only in which columns they
+    read. See ``_draw_curve_panel`` for the per-panel drawing logic."""
     for i, (ax, (model_flag, display_name)) in enumerate(zip(axes_row, models)):
-        metrics = _read_metrics_csv(os.path.join(log_dirs[model_flag], "metrics.csv"))
-        steps = metrics.get("step", [])
-        epochs = metrics.get("epoch", [])
-        color = MODEL_COLORS[display_name]
-        dark = _darken(color)
+        _draw_curve_panel(ax, model_flag, display_name, log_dirs, train_col, val_col, ylabel,
+                           xlabel=xlabel, show_legend=(show_legend and i == 0))
 
-        seen_epochs = set()
-        for step, epoch in zip(steps, epochs):
-            if epoch not in seen_epochs:
-                seen_epochs.add(epoch)
-                if len(seen_epochs) > 1:
-                    ax.axvline(step, color="#e1e0d9", lw=0.8, zorder=0)
 
-        train_vals = metrics.get(train_col, [])
-        ax.plot(steps, train_vals, color=color, lw=0.6, alpha=0.25, zorder=1)
-        ax.plot(steps, _ema(train_vals), color=color, lw=1.8, zorder=3)
-
-        val_vals = metrics.get(val_col, [])
-        val_change_steps, val_change_vals = [], []
-        for step, v in zip(steps, val_vals):
-            if not val_change_vals or v != val_change_vals[-1]:
-                val_change_steps.append(step)
-                val_change_vals.append(v)
-        if val_change_steps and val_change_steps[-1] != steps[-1]:
-            # extend the last known value flat to the right edge -- it's
-            # still in effect, just not re-measured again after this point
-            line_steps = val_change_steps + [steps[-1]]
-            line_vals = val_change_vals + [val_change_vals[-1]]
-        else:
-            line_steps, line_vals = val_change_steps, val_change_vals
-        ax.plot(line_steps, line_vals, color=dark, lw=1.0, ls=":", drawstyle="steps-post", zorder=4)
-        ax.plot(val_change_steps, val_change_vals, lw=0, marker="o", ms=4.5,
-                 mfc="white", mec=dark, mew=1.2, zorder=5)
-
-        ax.set_title(display_name, color=color, fontsize=10)
-        ax.set_ylabel(ylabel, fontsize=9)
-        if xlabel:
-            ax.set_xlabel(xlabel, fontsize=8)
-        if show_legend and i == 0:
-            ax.legend([Line2D([0], [0], color="#4a4a4a", lw=1.8),
-                       Line2D([0], [0], color="#4a4a4a", lw=1.0, ls=":", marker="o", ms=4.5,
-                              mfc="white", mec="#4a4a4a", mew=1.2)],
-                      ["train (smoothed)", "val"], loc="upper right", fontsize=7)
+def _export_curve_row_standalone(save_path, suffix_prefix, models, log_dirs,
+                                  train_col, val_col, ylabel, xlabel):
+    """Save every panel of one curve-sheet row as its own standalone image
+    (see ``_save_standalone_panel``): ``<save_path stem>_<suffix_prefix>_<model_flag>.png``
+    for each ``(model_flag, display_name)`` in ``models``. Always drawn with
+    its legend and x-label shown (even for a row that doesn't show them in
+    the combined grid, e.g. the top/supervised row there), since a
+    standalone panel has no neighboring panel to borrow context from."""
+    for model_flag, display_name in models:
+        _save_standalone_panel(
+            lambda ax, mf=model_flag, dn=display_name: _draw_curve_panel(
+                ax, mf, dn, log_dirs, train_col, val_col, ylabel, xlabel=xlabel, show_legend=True),
+            save_path, f"{suffix_prefix}_{model_flag}", figsize=(5, 4))
 
 
 def plot_loss_curves(sup_log_dirs, unsup_log_dirs, models, save_path=None):
@@ -287,17 +367,29 @@ def plot_loss_curves(sup_log_dirs, unsup_log_dirs, models, save_path=None):
     the notebook resolves these paths, since that requires knowing about
     ``results/best_hparams_ppi.json``, not something this module has an
     opinion on.
+
+    If ``save_path`` is given, every cell of the grid is also saved on its
+    own (see ``_save_standalone_panel``) as
+    ``<save_path stem>_supervised_<model_flag>.png`` /
+    ``_unsupervised_<model_flag>.png``.
     """
+    step_xlabel = "logged step (one point per --print_every steps)"
     fig, axes = plt.subplots(2, len(models), figsize=(14, 7.2), squeeze=False)
     _plot_curve_row(axes[0], models, sup_log_dirs, "train_loss", "val_loss",
                      "Supervised loss", show_legend=True)
     _plot_curve_row(axes[1], models, unsup_log_dirs, "train_loss", "val_loss",
-                     "Unsupervised loss", xlabel="logged step (one point per --print_every steps)")
+                     "Unsupervised loss", xlabel=step_xlabel)
     fig.suptitle("Training loss — PPI (faint vertical lines mark epoch boundaries)")
     fig.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=140)
     plt.show()
+
+    if save_path:
+        _export_curve_row_standalone(save_path, "supervised", models, sup_log_dirs,
+                                      "train_loss", "val_loss", "Supervised loss", step_xlabel)
+        _export_curve_row_standalone(save_path, "unsupervised", models, unsup_log_dirs,
+                                      "train_loss", "val_loss", "Unsupervised loss", step_xlabel)
     return fig
 
 
@@ -308,102 +400,142 @@ def plot_performance_curves(sup_log_dirs, unsup_log_dirs, models, save_path=None
     training, instead of the loss. Loss shows whether optimization is
     converging; this shows whether that convergence is translating into the
     task performance reported elsewhere in this notebook.
+
+    If ``save_path`` is given, every cell of the grid is also saved on its
+    own (see ``_save_standalone_panel``), same naming scheme as
+    ``plot_loss_curves``.
     """
+    step_xlabel = "logged step (one point per --print_every steps)"
     fig, axes = plt.subplots(2, len(models), figsize=(14, 7.2), squeeze=False)
     _plot_curve_row(axes[0], models, sup_log_dirs, "train_f1_micro", "val_f1_micro",
                      "Supervised F1 (micro)", show_legend=True)
     _plot_curve_row(axes[1], models, unsup_log_dirs, "train_mrr", "val_mrr",
-                     "Unsupervised MRR", xlabel="logged step (one point per --print_every steps)")
+                     "Unsupervised MRR", xlabel=step_xlabel)
     fig.suptitle("Training performance — PPI (the metric each setting is actually judged on)")
     fig.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=140)
     plt.show()
+
+    if save_path:
+        _export_curve_row_standalone(save_path, "supervised", models, sup_log_dirs,
+                                      "train_f1_micro", "val_f1_micro", "Supervised F1 (micro)", step_xlabel)
+        _export_curve_row_standalone(save_path, "unsupervised", models, unsup_log_dirs,
+                                      "train_mrr", "val_mrr", "Unsupervised MRR", step_xlabel)
     return fig
 
 
-def plot_stage_sheet(coords_by_step, steps, split_colors, sub_split, n_nodes,
-                      title, xlabel, ylabel, n_traj=35, rng_seed=7,
-                      sub_degree=None, save_path=None):
+def _draw_stage_panel(ax, coords, split_colors, sub_split, step,
+                       xlabel=None, ylabel=None, legend=False, title_prefix=None):
+    """Draw one small-multiple "stage" scatter (one snapshot step, colored by
+    split) onto ``ax``. Factored out of ``plot_stage_sheet`` so the exact
+    same drawing code can build one panel of the combined stages row or a
+    standalone single-panel export (see ``_save_standalone_panel``).
+
+    The combined sheet keeps every panel tick-less (a box outline on a
+    PCA/t-SNE scatter is pure frame, no information) and only labels/legends
+    the row externally (see ``plot_stage_sheet``); a standalone export has no
+    neighboring panel to borrow that context from, so it's given its own
+    ``xlabel``/``ylabel``/``legend``, and -- since "step 8000" alone doesn't
+    say which model or projection produced it -- its own ``title_prefix``
+    (the sheet's overall ``title``) prepended to the per-step title.
+    """
+    for split_name, color in split_colors.items():
+        mask = sub_split == split_name
+        ax.scatter(coords[mask, 0], coords[mask, 1], s=9, alpha=0.45, color=color, linewidths=0)
+    title = f"step {step}" if title_prefix is None else f"{title_prefix}\nstep {step}"
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([]); ax.set_yticks([])
+    for spine in ax.spines.values():  # tick-less panels: a box outline is pure frame, no information
+        spine.set_visible(False)
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=10)
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=10)
+    if legend:
+        handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=c,
+                           markeredgecolor="#0b0b0b", markersize=9, label=s)
+                   for s, c in split_colors.items()]
+        ax.legend(handles=handles, loc="best", fontsize=8)
+
+
+def _draw_degree_panel(ax, final_coords, sub_degree, last_step, xlabel, ylabel):
+    """Draw the "final stage colored by degree" panel onto ``ax``. Factored
+    out of ``plot_stage_sheet`` so the exact same drawing code can build the
+    combined sheet's copy or a standalone single-panel export (see
+    ``_save_standalone_panel``). Uses ``ax.figure`` (not a captured outer
+    ``fig``) for the colorbar, so it works identically in both contexts."""
+    log_degree = np.log10(np.asarray(sub_degree) + 1)
+    sc = ax.scatter(final_coords[:, 0], final_coords[:, 1], s=14, c=log_degree,
+                     cmap="viridis", linewidths=0)
+    ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_ylabel(ylabel, fontsize=10)
+    ax.set_title(f"final stage (step {last_step}), colored by degree "
+                 "(structural signal Theorem 1 argues pooling can exploit)", fontsize=10)
+    cbar = ax.figure.colorbar(sc, ax=ax, fraction=0.03, pad=0.02)
+    cbar.set_label("log10(degree + 1)", fontsize=8)
+
+
+def plot_stage_sheet(coords_by_step, steps, split_colors, sub_split,
+                      title, xlabel, ylabel, sub_degree=None, save_path=None):
     """§8.2 one consolidated sheet per projection method (PCA or t-SNE): the
-    small-multiples "stages" row (one panel per snapshot step) on top, and
-    the "trajectories" panel (a subset of nodes traced across every stage)
-    below -- both are the same underlying (coords_by_step, embeddings)
-    data, just two views of it, so they read as one figure instead of two.
+    small-multiples "stages" row (one panel per snapshot step), plus an
+    optional degree panel below it.
 
     ``coords_by_step`` maps each of ``steps`` to an ``[n_nodes, 2]``
     projected-coordinate array; ``split_colors`` maps split name -> color,
-    and ``sub_split`` is the split label ("train"/"val"/"test") of each of
-    the ``n_nodes`` tracked nodes, in the same row order as
-    ``coords_by_step``.
+    and ``sub_split`` is the split label ("train"/"val"/"test") of each
+    tracked node, in the same row order as ``coords_by_step``.
 
     If ``sub_degree`` (that same node ordering's graph degree) is given, a
-    third panel is added: the final stage colored by degree instead of
+    second panel is added: the final stage colored by degree instead of
     split -- Theorem 1 is specifically about the pooling aggregator
     exploiting structural (degree/clustering-related) signal, so this is
     the most direct visual check of that claim available from data this
     repo already collects.
+
+    If ``save_path`` is given, every panel is also saved on its own (see
+    ``_save_standalone_panel``): ``<save_path stem>_step_00000.png`` ...
+    ``_step_17050.png`` (one per entry in ``steps``, zero-padded), plus
+    (only when ``sub_degree`` is given) ``_degree.png`` -- so any single
+    stage, or the degree view, can be used on its own (e.g. in a single
+    presentation slide).
     """
     n_steps = len(steps)
     has_degree = sub_degree is not None
-    n_rows = 3 if has_degree else 2
-    height_ratios = [1, 1.9, 1.3] if has_degree else [1, 1.9]
-    fig = plt.figure(figsize=(2.6 * n_steps, 9.5 + (2.7 if has_degree else 0)))
+    n_rows = 2 if has_degree else 1
+    height_ratios = [1, 1.3] if has_degree else [1]
+    fig = plt.figure(figsize=(2.6 * n_steps, 3.8 + (3.2 if has_degree else 0)))
     gs = GridSpec(n_rows, n_steps, height_ratios=height_ratios, hspace=0.6, figure=fig)
 
     stage_axes = [fig.add_subplot(gs[0, i]) for i in range(n_steps)]
     for ax, step in zip(stage_axes, steps):
-        coords = coords_by_step[step]
-        for split_name, color in split_colors.items():
-            mask = sub_split == split_name
-            ax.scatter(coords[mask, 0], coords[mask, 1], s=9, alpha=0.45, color=color, linewidths=0)
-        ax.set_title(f"step {step}", fontsize=10)
-        ax.set_xticks([]); ax.set_yticks([])
-        for spine in ax.spines.values():  # tick-less panels: a box outline is pure frame, no information
-            spine.set_visible(False)
+        _draw_stage_panel(ax, coords_by_step[step], split_colors, sub_split, step)
     stage_axes[0].set_ylabel(ylabel, fontsize=10)
     stage_axes[n_steps // 2].set_xlabel(xlabel, fontsize=10)
-
-    span = max(2, n_steps // 3)
-    start_col = (n_steps - span) // 2
-    traj_ax = fig.add_subplot(gs[1, start_col:start_col + span])
-    rng_traj = np.random.RandomState(rng_seed)
-    traj_idx = rng_traj.choice(n_nodes, size=min(n_traj, n_nodes), replace=False)
-    for k in traj_idx:
-        xs_ = [coords_by_step[step][k, 0] for step in steps]
-        ys_ = [coords_by_step[step][k, 1] for step in steps]
-        color = split_colors[sub_split[k]]
-        traj_ax.plot(xs_, ys_, color="#898781", alpha=0.45, lw=1.0, zorder=1)
-        traj_ax.scatter(xs_[0], ys_[0], s=30, color=color, marker="o", edgecolors="#0b0b0b", linewidths=0.5, zorder=2)
-        traj_ax.scatter(xs_[-1], ys_[-1], s=110, color=color, marker="*", edgecolors="#0b0b0b", linewidths=0.6, zorder=3)
-    traj_ax.set_xlabel(xlabel, fontsize=10)
-    traj_ax.set_ylabel(ylabel, fontsize=10)
-    traj_ax.set_title(
-        f"individual trajectories (circle = step {steps[0]}, star = step {steps[-1]}, n={len(traj_idx)} nodes)",
-        fontsize=11)
-    handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=c, markeredgecolor="#0b0b0b", markersize=9, label=s)
-               for s, c in split_colors.items()]
-    traj_ax.legend(handles=handles, loc="best", fontsize=9)
 
     if has_degree:
         deg_span = max(2, n_steps // 3)
         deg_start = (n_steps - deg_span) // 2
-        deg_ax = fig.add_subplot(gs[2, deg_start:deg_start + deg_span])
-        final_coords = coords_by_step[steps[-1]]
-        log_degree = np.log10(np.asarray(sub_degree) + 1)
-        sc = deg_ax.scatter(final_coords[:, 0], final_coords[:, 1], s=14, c=log_degree,
-                             cmap="viridis", linewidths=0)
-        deg_ax.set_xlabel(xlabel, fontsize=10)
-        deg_ax.set_ylabel(ylabel, fontsize=10)
-        deg_ax.set_title(f"final stage (step {steps[-1]}), colored by degree "
-                          "(structural signal Theorem 1 argues pooling can exploit)", fontsize=10)
-        cbar = fig.colorbar(sc, ax=deg_ax, fraction=0.03, pad=0.02)
-        cbar.set_label("log10(degree + 1)", fontsize=8)
+        deg_ax = fig.add_subplot(gs[1, deg_start:deg_start + deg_span])
+        _draw_degree_panel(deg_ax, coords_by_step[steps[-1]], sub_degree, steps[-1], xlabel, ylabel)
 
     fig.suptitle(title, y=0.98, fontsize=14)
     if save_path:
         fig.savefig(save_path, dpi=140, bbox_inches="tight")
     plt.show()
+
+    if save_path:
+        for step in steps:
+            _save_standalone_panel(
+                lambda ax, c=coords_by_step[step], s=step: _draw_stage_panel(
+                    ax, c, split_colors, sub_split, s, xlabel=xlabel, ylabel=ylabel,
+                    legend=True, title_prefix=title),
+                save_path, f"step_{step:05d}", figsize=(4.5, 4.5))
+        if has_degree:
+            _save_standalone_panel(
+                lambda ax: _draw_degree_panel(ax, coords_by_step[steps[-1]], sub_degree, steps[-1], xlabel, ylabel),
+                save_path, "degree", figsize=(6, 5))
     return fig
 
 
