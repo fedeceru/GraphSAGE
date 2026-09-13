@@ -318,10 +318,25 @@ def _draw_curve_panel(ax, model_flag, display_name, log_dirs, train_col, val_col
     if xlabel:
         ax.set_xlabel(xlabel, fontsize=8)
     if show_legend:
+        # No single fixed corner is safe for every panel: which corner the
+        # val curve's plateau (or the faint raw/noisy train trace) occupies
+        # depends on the metric (loss falls, F1/MRR rises) and on that run's
+        # own noise, so a hardcoded position can silently start overlapping
+        # data again on a different run. loc="best" scores the standard
+        # candidate positions against the actual plotted data, but val is a
+        # sparse "steps-post" line with very few vertices (sometimes just a
+        # near-flat plateau near one edge) -- too sparse for that heuristic
+        # to reliably register as occupied, so "best" can still choose a
+        # spot the plateau already runs through. Padding the top of the
+        # y-range gives every panel a guaranteed-empty strip above its
+        # highest data point for "best" to land in, without pinning the
+        # legend to a fixed corner that would be wrong on a different run.
+        ymin, ymax = ax.get_ylim()
+        ax.set_ylim(ymin, ymax + (ymax - ymin) * 0.22)
         ax.legend([Line2D([0], [0], color="#4a4a4a", lw=1.8),
                    Line2D([0], [0], color="#4a4a4a", lw=1.0, ls=":", marker="o", ms=4.5,
                           mfc="white", mec="#4a4a4a", mew=1.2)],
-                  ["train (smoothed)", "val"], loc="upper right", fontsize=7)
+                  ["train (smoothed)", "val"], loc="best", fontsize=7)
 
 
 def _plot_curve_row(axes_row, models, log_dirs, train_col, val_col, ylabel,

@@ -34,7 +34,8 @@ results/*
 !results/.gitkeep
 
 # Personal exam/presentation prep notes -- not a project deliverable
-STUDY_GUIDE_IT.md
+STUDY_GUIDE.md
+presentation/presentation_script.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

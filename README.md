@@ -1,23 +1,39 @@
 # GraphSAGE - PPI
 
-A **tailored, scaled-down reproduction** of
-**"Inductive Representation Learning on Large Graphs"**
-(Hamilton, Ying, Leskovec, NeurIPS 2017, [`GraphSAGE.pdf`](GraphSAGE.pdf)),
-purpose-built to run end-to-end on a single local consumer GPU within a
-strict 2-hour compute budget. It is not a claim of the paper's original
-scale (4x Titan X Pascal GPUs, three datasets, a full Appendix C
-hyperparameter sweep) -- it is scoped to the public **PPI**
-(protein-protein interaction) benchmark, with the experimental *budget*
-(hyperparameter grid size, seed count, epoch/step counts) deliberately
-reduced to fit local hardware. The algorithm itself is not reduced: Algorithm
-1/2, the four aggregator formulas, the unsupervised loss, and the
-K=2/S1=25/S2=10 architecture are implemented exactly as the paper specifies
-everywhere in this repo, at any scale.
+A tailored, scaled-down reproduction of
+["Inductive Representation Learning on Large Graphs"](GraphSAGE.pdf)
+(Hamilton, Ying, Leskovec, NeurIPS 2017), purpose-built to run end-to-end on
+a single local consumer GPU within a strict 2-hour compute budget. The
+paper's original scale (4x Titan X Pascal GPUs, three datasets, a full
+Appendix C hyperparameter sweep) is out of reach here, so this reproduction
+is scoped to the public PPI (protein-protein interaction) benchmark, with
+the experimental *budget* (hyperparameter grid size, seed count, epoch/step
+counts) deliberately reduced to fit local hardware. The algorithm itself is
+not reduced: Algorithm 1/2, the four aggregator formulas, the unsupervised
+loss, and the K=2/S1=25/S2=10 architecture are implemented exactly as the
+paper specifies, everywhere in this repo, at any scale.
+
+## Dataset
+
+This reproduction runs on the public **PPI (protein-protein interaction)**
+dataset released by the GraphSAGE authors themselves, at
+<http://snap.stanford.edu/graphsage/ppi.zip> -- the same file used for the
+paper's own PPI results (Table 1, Figure 2B, Figure 3). Nothing here is a
+resampled, filtered, or otherwise modified copy: `scripts/run_ppi_experiments.py`
+downloads and unzips this exact archive into `data/ppi/` automatically (see
+[Reproduction](#reproduction) below).
+
+| | |
+|---|---|
+| Graphs | 24 (20 train / 2 val / 2 test -- cross-graph generalization) |
+| Nodes | 56,944 total, across all 24 graphs |
+| Labels | 121 Gene Ontology terms (multi-label: a protein can have several at once) |
+| Features | 50-dim (positional/motif gene sets + immunological signatures) |
 
 ## Results
 
-**These numbers come from this repo's actual 2-hour local run**
-(`scripts/run_ppi_experiments_scaled.py` — see "Scaled local reproduction"
+These numbers come from this repo's actual 2-hour local run
+(`scripts/run_ppi_experiments_scaled.py`; see "Scaled local reproduction"
 below for the exact configuration and what was traded off to fit). Every
 number below is a real measurement from that run, not a projection.
 
@@ -41,17 +57,17 @@ Appendix C 3-value grid.
 ## Scaled local reproduction (2-hour budget)
 
 `scripts/run_ppi_experiments_scaled.py` is this repo's actual, purpose-built
-entry point -- it produced the Results table above. It calls
+entry point; it produced the Results table above. It calls
 `scripts/sweep_ppi_experiments.py`, `multiseed_ppi_experiments.py`,
 `sensitivity_ppi_experiments.py`, and `noise_robustness_ppi_experiments.py`
 as subprocesses, with a deliberately reduced experimental *budget*
 (hyperparameter grid size, seed count, epoch/step counts) passed via their
-own CLI flags. Those flags are also what those four scripts still accept a
-broader grid through internally -- that's a code-level detail, not a second
-mode this repo is built to run; **nothing about the algorithm itself is
-reduced**: Algorithm 1/2, the aggregator formulas, the unsupervised loss,
-and the K=2/S1=25/S2=10 architecture are exactly as the paper specifies,
-identically at every point in this repo.
+own CLI flags. Those same flags let the four scripts accept a broader grid
+internally too, which is a code-level detail rather than a second mode this
+repo is built to run. The algorithm itself is unchanged throughout: Algorithm
+1/2, the aggregator formulas, the unsupervised loss, and the
+K=2/S1=25/S2=10 architecture are exactly as the paper specifies, at every
+point in this repo.
 
 ```powershell
 .venv\Scripts\python.exe scripts\run_ppi_experiments_scaled.py --dry_run
@@ -60,11 +76,11 @@ identically at every point in this repo.
 
 It runs four tiers, in priority order, checking elapsed wall-clock time
 against `--time_budget_minutes` (default 100, leaving ~20 min of the 2-hour
-hard cap as buffer) before starting each one -- if a tier overruns, whatever
-hasn't started yet is skipped and logged as such in
-`results/scaled_run_manifest.json`, rather than silently blown past. On the
-run that produced the table above, **all four tiers finished in 73.1
-minutes total**, comfortably under budget; nothing was skipped.
+hard cap as buffer) before starting each one. If a tier overruns, whatever
+hasn't started yet is skipped and logged in
+`results/scaled_run_manifest.json`, instead of silently running past budget.
+On the run that produced the table above, all four tiers finished in 73.1
+minutes total, comfortably under budget; nothing was skipped.
 
 | Tier | What | Reduced from the full protocol | Actual time |
 |---|---|---|---|
@@ -73,26 +89,27 @@ minutes total**, comfortably under budget; nothing was skipped.
 | 3. Sensitivity | K-sweep only (K in {1, 3}; K=2 reused), `graphsage_mean` supervised, 5 epochs. Sample-size sub-sweep dropped entirely. | 7 configs -> 2 new configs | 0.9 min |
 | 4. Noise robustness | 3 of 5 noise levels ({0.0, 0.5, 1.0}), GCN + pool, 5 epochs each. | 5 noise levels -> 3 | 3.0 min |
 
-**Caveat worth knowing**: tier 2's seed=123 point and tier 3's K=2 point both
+One caveat worth knowing: tier 2's seed=123 point and tier 3's K=2 point both
 *reuse* the original, genuine full-10-epoch canonical run (not a fresh
 5-epoch run), while every other point in those two comparisons is freshly
 trained at the reduced budget. That's intentional (why retrain something
 already correct?), but it means those specific mean/std and K-vs-F1 numbers
-mix two different training budgets, not just seed/K -- treat them as
-suggestive, not a clean controlled comparison. `results/scaled_run_manifest.json`
-records exactly which candidates were fresh vs. reused for every tier.
+mix two different training budgets, not just seed/K. Treat them as
+suggestive rather than a clean controlled comparison.
+`results/scaled_run_manifest.json` records exactly which candidates were
+fresh vs. reused for every tier.
 
-Despite the cuts, the qualitative results still hold: the reduced sweep
-picked lr=0.01 (the existing default) as best for all 4 supervised variants,
-K=2 clearly beats K=1 (0.585 vs. 0.472 F1) with K=3 not exceeding it (0.575,
-consistent with the paper's "marginal returns beyond K=2"), and the
-noise-robustness check reproduces Figure 3's qualitative claim on PPI:
-GraphSAGE-pool stays above both GCN and the raw-features baseline at every
-noise level (0.546/0.453/0.462 F1 at noise 0.0/0.5/1.0), while GCN starts
-clearly ahead of raw features at zero noise (0.490 vs. 0.432) but *falls
-below* it by full noise (0.389 vs. 0.393) -- i.e. GCN's advantage over a
-plain feature classifier evaporates as features degrade, while pool's does
-not, exactly the structural-reliance gap Theorem 1 predicts.
+The qualitative results survive the cuts: the reduced sweep picked lr=0.01
+(the existing default) as best for all 4 supervised variants, K=2 clearly
+beats K=1 (0.585 vs. 0.472 F1) with K=3 not exceeding it (0.575, consistent
+with the paper's "marginal returns beyond K=2"), and the noise-robustness
+check reproduces Figure 3's qualitative claim on PPI: GraphSAGE-pool stays
+above both GCN and the raw-features baseline at every noise level
+(0.546/0.453/0.462 F1 at noise 0.0/0.5/1.0), while GCN starts clearly ahead
+of raw features at zero noise (0.490 vs. 0.432) but *falls below* it by full
+noise (0.389 vs. 0.393). GCN's advantage over a plain feature classifier
+evaporates as features degrade, while pool's does not: exactly the
+structural-reliance gap Theorem 1 predicts.
 
 ## Repository structure
 
@@ -123,16 +140,16 @@ scripts/                                           Reproduction pipeline
   sensitivity_ppi_experiments.py                   Section 4.3 K / neighborhood-sample-size sweep on PPI
   noise_robustness_ppi_experiments.py              Figure 3 / Theorem 1 feature-noise-robustness check on PPI
 
-data/ppi/                                          PPI dataset (not tracked in git -- downloaded by the command below)
+data/ppi/                                          PPI dataset, from http://snap.stanford.edu/graphsage/ppi.zip  
 logs/                                              training logs, TensorBoard events, metrics.csv, saved embeddings + snapshots (not tracked)
-results/                                           final metrics + figures, all produced by the scripts above (not tracked -- ships as an empty `results/.gitkeep` placeholder)
-illustrations/                                     static, purely didactic diagrams (not generated by any script -- see illustrations/README.md)
+results/                                           final metrics + figures, all produced by the scripts above 
+illustrations/                                     static, purely didactic diagrams 
 ```
 
 ## Reproduction
 
-`data/`, `logs/` and `results/` all ship empty (git-ignored, placeholder-only)
--- running the command below populates all three from scratch.
+`data/`, `logs/` and `results/` all ship empty (git-ignored, placeholder-only);
+running the command below populates all three from scratch.
 
 ```powershell
 .venv\Scripts\python.exe scripts\run_ppi_experiments.py
@@ -161,18 +178,18 @@ output, which is what the notebook's training-dynamics charts read from.
 `run_ppi_experiments_scaled.py` calls four scripts, each covering one piece
 of the paper this reproduction addresses. Briefly, in the order they run:
 
-- **`sweep_ppi_experiments.py`** -- Appendix C's hyperparameter-selection
+- **`sweep_ppi_experiments.py`**: Appendix C's hyperparameter-selection
   idea (sweep learning rate x model size, keep whichever scores best *on
   validation*), at the reduced grid described above. Writes
   `results/best_hparams_ppi.json`; `compile_results.py` and
   `notebook.ipynb` §8 read it automatically.
-- **`multiseed_ppi_experiments.py`** -- repeats a variant under a second
+- **`multiseed_ppi_experiments.py`**: repeats a variant under a second
   `--seed` and reports mean/std. Writes `results/seed_variance_ppi.json`.
-- **`sensitivity_ppi_experiments.py`** -- Section 4.3's K-sensitivity claim
+- **`sensitivity_ppi_experiments.py`**: Section 4.3's K-sensitivity claim
   (`--k_only` here: the neighborhood-sample-size half is dropped to fit the
   time budget). Writes `results/sensitivity_ppi.json`, read by
   `notebook.ipynb` §8.3.
-- **`noise_robustness_ppi_experiments.py`** -- the Figure 3 / Theorem 1
+- **`noise_robustness_ppi_experiments.py`**: the Figure 3 / Theorem 1
   feature-noise-robustness check. Writes `results/noise_robustness_ppi.json`,
   read by `notebook.ipynb` §9.1.
 
