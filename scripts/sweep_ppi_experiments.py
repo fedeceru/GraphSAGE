@@ -30,9 +30,18 @@ supervised and unsupervised setting:
    (model, setting), and record its *test* score:
    - supervised: already sitting in that winning run's `test_stats.txt`.
    - unsupervised: one more `eval_unsupervised.py` call, this time
-     `--split test` (the default), writing to the exact same
-     `results/eval_unsup_<model>.json` path the single-run pipeline already
-     uses -- so nothing downstream needs to change to consume it.
+     `--split test` (the default), writing to `results/eval_unsup_sweep_
+     <model>.json` -- a diagnostic record of what the sweep's own selection
+     found, kept separate from `results/eval_unsup_<model>.json`. That
+     "official" path is deliberately *not* touched by this script: judging
+     unsupervised candidates at this script's reduced step cap was verified
+     to produce an unstable, non-representative ranking (a fast-to-drop-loss
+     aggregator can look better than a slow-to-converge one that ends up
+     ahead at full convergence), so the
+     headline unsupervised number is instead evaluated from each model's
+     already-existing full-epoch default run (`<model>_small_1.00e-05/`,
+     see `scripts/run_ppi_experiments.py`) -- see README.md's "Scaled local
+     reproduction" section for the full rationale.
 4. Write `results/best_hparams_ppi.json`: for every (model, setting), the
    winning config plus its validation and test scores. `compile_results.py`
    and `notebook.ipynb` read this file when present to know which log
@@ -183,8 +192,11 @@ def sweep_unsupervised(model: str, sizes, lrs, max_total_steps, gpu, env, dry_ru
     """Train every (size, lr) candidate for `model`, score each on the *val*
     split via eval_unsupervised.py --split val (never test), pick the
     validation-best candidate, then run one final eval_unsupervised.py
-    --split test (default) on that winner only, writing to the same
-    results/eval_unsup_<model>.json path the single-run pipeline uses.
+    --split test (default) on that winner only, writing to
+    results/eval_unsup_sweep_<model>.json -- a diagnostic record of the
+    sweep's own selection, not the "official" results/eval_unsup_<model>.json
+    (that one now always comes from the full-epoch default run instead; see
+    the module docstring for why).
 
     A candidate whose embeddings already exist (val.npy present) is reused
     rather than retrained unless `force` -- see sweep_supervised()'s
@@ -228,7 +240,7 @@ def sweep_unsupervised(model: str, sizes, lrs, max_total_steps, gpu, env, dry_ru
         return None
     best = max(candidates, key=lambda c: c["val_f1_micro"])
 
-    test_out = REPO_ROOT / "results" / ("eval_unsup_%s.json" % model)
+    test_out = REPO_ROOT / "results" / ("eval_unsup_sweep_%s.json" % model)
     run_streamed(
         [str(VENV_PYTHON), "scripts/eval_unsupervised.py",
          "--train_prefix", "data/ppi/ppi", "--embed_dir", best["log_dir"],
