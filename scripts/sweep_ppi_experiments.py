@@ -76,6 +76,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+# This .venv's own site-packages isn't on sys.path by default (its
+# pyvenv.cfg "home" points at a conda base whose site-packages lacks
+# tensorflow) -- every subprocess spawned via VENV_PYTHON needs this on
+# PYTHONPATH explicitly, or `import tensorflow` fails with
+# ModuleNotFoundError despite tensorflow being installed right here.
+VENV_SITE_PACKAGES = VENV_PYTHON.parent.parent / "Lib" / "site-packages"
 
 MODELS = ["graphsage_mean", "gcn", "graphsage_seq", "graphsage_maxpool"]
 
@@ -275,7 +281,7 @@ def main():
     env = os.environ.copy()
     if not args.dry_run:
         env["PATH"] = str(VENV_PYTHON.parent) + os.pathsep + env.get("PATH", "")
-        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        env["PYTHONPATH"] = str(VENV_SITE_PACKAGES) + os.pathsep + str(REPO_ROOT / "src")
         (REPO_ROOT / "results" / "_sweep_tmp").mkdir(parents=True, exist_ok=True)
 
     manifest_path = REPO_ROOT / args.out_manifest

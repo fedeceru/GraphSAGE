@@ -73,6 +73,12 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 SRC_DIR = REPO_ROOT / "src"
+# This .venv's own site-packages isn't on sys.path by default (its
+# pyvenv.cfg "home" points at a conda base whose site-packages lacks
+# tensorflow) -- every subprocess spawned via VENV_PYTHON needs this on
+# PYTHONPATH explicitly, or `import tensorflow` fails with
+# ModuleNotFoundError despite tensorflow being installed right here.
+VENV_SITE_PACKAGES = VENV_PYTHON.parent.parent / "Lib" / "site-packages"
 
 MODELS = [("gcn", "GraphSAGE-GCN"), ("graphsage_maxpool", "GraphSAGE-pool")]
 NOISE_PROPS = [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -207,7 +213,7 @@ def main():
     env = os.environ.copy()
     if not args.dry_run:
         env["PATH"] = str(VENV_PYTHON.parent) + os.pathsep + env.get("PATH", "")
-        env["PYTHONPATH"] = str(SRC_DIR)
+        env["PYTHONPATH"] = str(VENV_SITE_PACKAGES) + os.pathsep + str(SRC_DIR)
 
     results = {"noise_props": args.noise_props,
                "GraphSAGE-GCN": {"test_f1_micro": []},

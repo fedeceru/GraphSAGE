@@ -24,10 +24,11 @@ magnitude short of a full ~17,050-step epoch -- so 3000 steps is a
 principled cutoff for *ranking* candidates, not an arbitrary shortcut);
 (2) one additional seed (124) alongside the existing seed=123 results, at
 5 epochs (supervised) / 3000 steps (unsupervised), using whatever tier 1
-selected; (3) the K-sweep half of the sensitivity script only (K in
-{1, 3}; K=2 reused), 5 epochs, sample-size sweep dropped; (4) noise
-robustness trimmed to 3 of 5 noise levels, 5 epochs each -- lowest priority,
-first cut if time is short.
+selected; (3) the full sensitivity script -- both the K-sweep (K in {1, 3};
+K=2 reused) and the neighborhood-sample-size sweep (S1=S2=S in
+{5, 10, 25, 50, 75}, K=2 fixed, graphsage_mean supervised) -- 5 epochs each;
+(4) noise robustness trimmed to 3 of 5 noise levels, 5 epochs each -- lowest
+priority, first cut if time is short.
 
 This is an orchestrator, not a reimplementation: every item below is a
 subprocess call into one of the 4 existing fidelity scripts with reduced
@@ -66,6 +67,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+# This .venv's own site-packages isn't on sys.path by default (its
+# pyvenv.cfg "home" points at a conda base whose site-packages lacks
+# tensorflow) -- every subprocess spawned via VENV_PYTHON needs this on
+# PYTHONPATH explicitly, or `import tensorflow` fails with
+# ModuleNotFoundError despite tensorflow being installed right here.
+VENV_SITE_PACKAGES = VENV_PYTHON.parent.parent / "Lib" / "site-packages"
 
 # Reduced grid: see module docstring for why these specific values.
 SUP_LRS = ["0.01", "0.001"]           # 0.01 reuses the existing default run
@@ -110,7 +117,7 @@ def main():
     env = os.environ.copy()
     if not args.dry_run:
         env["PATH"] = str(VENV_PYTHON.parent) + os.pathsep + env.get("PATH", "")
-        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        env["PYTHONPATH"] = str(VENV_SITE_PACKAGES) + os.pathsep + str(REPO_ROOT / "src")
 
     budget_s = args.time_budget_minutes * 60
     start = time.time()
@@ -165,10 +172,10 @@ def main():
         "--max_total_steps", UNSUP_STEP_CAP, "--gpu", str(args.gpu),
     ])
 
-    # --- Tier 3: K-sweep only (sample-size sweep dropped) -------------------
-    maybe_run("sensitivity-k-sweep", 3, [
+    # --- Tier 3: full sensitivity sweep (K + neighborhood sample size) ------
+    maybe_run("sensitivity-full-sweep", 3, [
         py, "scripts/sensitivity_ppi_experiments.py",
-        "--k_only", "--epochs", SENSITIVITY_EPOCHS, "--gpu", str(args.gpu),
+        "--epochs", SENSITIVITY_EPOCHS, "--gpu", str(args.gpu),
     ])
 
     # --- Tier 4: noise robustness, trimmed to 3 of 5 noise levels -----------

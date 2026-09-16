@@ -31,5 +31,31 @@
       "sec_per_iter": 0.70217
     }
   ],
-  "sample_size_sweep": []
+  "sample_size_sweep": [
+    {
+      "sample_size": 5,
+      "test_f1_micro": 0.53605,
+      "sec_per_iter": 0.35466
+    },
+    {
+      "sample_size": 10,
+      "test_f1_micro": 0.57361,
+      "sec_per_iter": 0.36507
+    },
+    {
+      "sample_size": 25,
+      "test_f1_micro": 0.59258,
+      "sec_per_iter": 0.43512
+    },
+    {
+      "sample_size": 50,
+      "test_f1_micro": 0.62415,
+      "sec_per_iter": 0.61635
+    },
+    {
+      "sample_size": 75,
+      "test_f1_micro": 0.64017,
+      "sec_per_iter": 0.82606
+    }
+  ]
 }

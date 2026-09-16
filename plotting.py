@@ -388,7 +388,7 @@ def plot_loss_curves(sup_log_dirs, unsup_log_dirs, models, save_path=None):
     ``<save_path stem>_supervised_<model_flag>.png`` /
     ``_unsupervised_<model_flag>.png``.
     """
-    step_xlabel = "logged step (one point per --print_every steps)"
+    step_xlabel = "Logged training step"
     fig, axes = plt.subplots(2, len(models), figsize=(14, 7.2), squeeze=False)
     _plot_curve_row(axes[0], models, sup_log_dirs, "train_loss", "val_loss",
                      "Supervised loss", show_legend=True)
@@ -420,7 +420,7 @@ def plot_performance_curves(sup_log_dirs, unsup_log_dirs, models, save_path=None
     own (see ``_save_standalone_panel``), same naming scheme as
     ``plot_loss_curves``.
     """
-    step_xlabel = "logged step (one point per --print_every steps)"
+    step_xlabel = "Logged training step"
     fig, axes = plt.subplots(2, len(models), figsize=(14, 7.2), squeeze=False)
     _plot_curve_row(axes[0], models, sup_log_dirs, "train_f1_micro", "val_f1_micro",
                      "Supervised F1 (micro)", show_legend=True)
@@ -596,19 +596,34 @@ def plot_k_sensitivity(k_df, save_path=None):
 def plot_sample_size_sensitivity(ss_df, save_path=None):
     """Analogue of ``plot_k_sensitivity`` for the paper's other Section 4.3
     claim -- "diminishing returns for sampling large neighborhoods"
-    (Figure 2B): F1 vs. neighborhood sample size S, at fixed K=2. Only
-    populated when ``sensitivity_ppi_experiments.py`` is run without
-    ``--k_only`` (the scaled run in this repo skips it to fit the time
-    budget, so this plot is here for whenever that fuller sweep is run).
+    (Figure 2B): F1 (left axis) and average training seconds/iteration
+    (right axis, where available) vs. neighborhood sample size S, at fixed
+    K=2. Only populated when ``sensitivity_ppi_experiments.py`` is run
+    without ``--k_only`` (an earlier scaled run in this repo skipped it to
+    fit the time budget; this plot activates once that fuller sweep runs).
 
-    ``ss_df`` needs columns ``"sample_size"`` and ``"test_f1_micro"``.
+    ``ss_df`` needs columns ``"sample_size"`` and ``"test_f1_micro"``, and
+    optionally ``"sec_per_iter"`` (may contain missing/NaN entries).
     """
-    fig, ax = plt.subplots(figsize=(5, 4))
-    ax.plot(ss_df["sample_size"], ss_df["test_f1_micro"], marker="o", color="#2a78d6")
+    fig, ax = plt.subplots(figsize=(5.5, 4))
+    ax.plot(ss_df["sample_size"], ss_df["test_f1_micro"], marker="o", color="#2a78d6", label="Test F1 (micro)")
     ax.set_xlabel("Neighborhood sample size S (S1 = S2 = S, K=2)")
-    ax.set_ylabel("Test Micro F1")
-    ax.set_title("GraphSAGE-mean (supervised): F1 vs. sample size, on PPI")
+    ax.set_ylabel("Test Micro F1", color="#2a78d6")
+    ax.tick_params(axis="y", labelcolor="#2a78d6")
     _light_grid(ax)
+
+    lines = ax.get_lines()
+    if "sec_per_iter" in ss_df:
+        timing = ss_df.dropna(subset=["sec_per_iter"])
+        if len(timing):
+            ax2 = ax.twinx()
+            ax2.plot(timing["sample_size"], timing["sec_per_iter"], marker="s", color=COST_COLOR, label="sec / iteration")
+            ax2.set_ylabel("sec / iteration", color=COST_COLOR)
+            ax2.tick_params(axis="y", labelcolor=COST_COLOR)
+            lines = lines + ax2.get_lines()
+
+    ax.legend(lines, [l.get_label() for l in lines], loc="upper left", fontsize=8)
+    ax.set_title("GraphSAGE-mean (supervised): F1 & runtime vs. sample size, on PPI")
     fig.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=140)

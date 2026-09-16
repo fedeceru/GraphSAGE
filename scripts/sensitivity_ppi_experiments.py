@@ -44,10 +44,12 @@ Per-run training time (average seconds/iteration, parsed from the same
 notebook.ipynb's extract_last_avg_time) is recorded alongside F1, so the
 runtime-cost half of the K claim above can be checked too, not just accuracy.
 
-This script's own defaults (both sweeps, full 10 epochs) describe a broader
-check than this repo runs -- `scripts/run_ppi_experiments_scaled.py` invokes
-it with `--k_only --epochs 5` (K sweep only, sample-size sweep dropped),
-which is what this repo's committed `results/sensitivity_ppi.json` reflects.
+This script's own defaults are both sweeps at the full 10 epochs.
+`scripts/run_ppi_experiments_scaled.py` invokes it at the reduced
+`--epochs 5` budget (like every other scaled-reproduction tier) but no
+longer passes `--k_only` -- both sweeps run, which is what this repo's
+committed `results/sensitivity_ppi.json` reflects. `--k_only` remains
+available for a cheaper K-only pass (e.g. a quick smoke test).
 
 Writes results/sensitivity_ppi.json:
     {"K_sweep": [{"K": 1, "samples": [25,0,0], "test_f1_micro": ..., "sec_per_iter": ...}, ...],
@@ -70,6 +72,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+# This .venv's own site-packages isn't on sys.path by default (its
+# pyvenv.cfg "home" points at a conda base whose site-packages lacks
+# tensorflow) -- every subprocess spawned via VENV_PYTHON needs this on
+# PYTHONPATH explicitly, or `import tensorflow` fails with
+# ModuleNotFoundError despite tensorflow being installed right here.
+VENV_SITE_PACKAGES = VENV_PYTHON.parent.parent / "Lib" / "site-packages"
 
 MODEL = "graphsage_mean"
 LR = 0.01
@@ -182,7 +190,7 @@ def main():
     env = os.environ.copy()
     if not args.dry_run:
         env["PATH"] = str(VENV_PYTHON.parent) + os.pathsep + env.get("PATH", "")
-        env["PYTHONPATH"] = str(REPO_ROOT / "src")
+        env["PYTHONPATH"] = str(VENV_SITE_PACKAGES) + os.pathsep + str(REPO_ROOT / "src")
 
     results = {"K_sweep": [], "sample_size_sweep": []}
 

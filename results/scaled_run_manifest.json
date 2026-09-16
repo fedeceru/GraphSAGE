@@ -7,9 +7,9 @@
       "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sweep_ppi_experiments.py --settings supervised --sup_lrs 0.01 0.001 --sizes small --gpu 0",
       "ran": true,
       "ok": true,
-      "elapsed_sec": 163.7795660495758,
+      "elapsed_sec": 0.08551454544067383,
       "reason": null,
-      "elapsed_total_sec_at_finish": 163.7795660495758
+      "elapsed_total_sec_at_finish": 0.08551454544067383
     },
     {
       "name": "sweep-unsupervised",
@@ -17,9 +17,9 @@
       "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sweep_ppi_experiments.py --settings unsupervised --unsup_lrs 0.000002 0.0000002 --sizes small --max_total_steps 3000 --gpu 0",
       "ran": true,
       "ok": true,
-      "elapsed_sec": 2537.512839078903,
+      "elapsed_sec": 113.47359776496887,
       "reason": null,
-      "elapsed_total_sec_at_finish": 2701.292405128479
+      "elapsed_total_sec_at_finish": 113.55911231040955
     },
     {
       "name": "multiseed-supervised",
@@ -27,9 +27,9 @@
       "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/multiseed_ppi_experiments.py --settings supervised --seeds 123 124 --epochs 5 --gpu 0",
       "ran": true,
       "ok": true,
-      "elapsed_sec": 122.78532934188843,
+      "elapsed_sec": 0.09529852867126465,
       "reason": null,
-      "elapsed_total_sec_at_finish": 2824.0777344703674
+      "elapsed_total_sec_at_finish": 113.65441083908081
     },
     {
       "name": "multiseed-unsupervised",
@@ -37,19 +37,19 @@
       "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/multiseed_ppi_experiments.py --settings unsupervised --seeds 123 124 --max_total_steps 3000 --gpu 0",
       "ran": true,
       "ok": true,
-      "elapsed_sec": 1325.2340483665466,
+      "elapsed_sec": 0.0965733528137207,
       "reason": null,
-      "elapsed_total_sec_at_finish": 4149.311782836914
+      "elapsed_total_sec_at_finish": 113.75098419189453
     },
     {
-      "name": "sensitivity-k-sweep",
+      "name": "sensitivity-full-sweep",
       "tier": 3,
-      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sensitivity_ppi_experiments.py --k_only --epochs 5 --gpu 0",
+      "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/sensitivity_ppi_experiments.py --epochs 5 --gpu 0",
       "ran": true,
       "ok": true,
-      "elapsed_sec": 53.44166684150696,
+      "elapsed_sec": 134.4335503578186,
       "reason": null,
-      "elapsed_total_sec_at_finish": 4202.753449678421
+      "elapsed_total_sec_at_finish": 248.18453454971313
     },
     {
       "name": "noise-robustness",
@@ -57,11 +57,11 @@
       "cmd": "C:\\Users\\feder\\Desktop\\GraphSAGE\\.venv\\Scripts\\python.exe scripts/noise_robustness_ppi_experiments.py --noise_props 0.0 0.5 1.0 --epochs 5 --gpu 0",
       "ran": true,
       "ok": true,
-      "elapsed_sec": 182.59410166740417,
+      "elapsed_sec": 35.23509097099304,
       "reason": null,
-      "elapsed_total_sec_at_finish": 4385.347551345825
+      "elapsed_total_sec_at_finish": 283.4196255207062
     }
   ],
-  "total_elapsed_sec": 4385.347551345825,
-  "total_elapsed_min": 73.08912585576375
+  "total_elapsed_sec": 283.4196255207062,
+  "total_elapsed_min": 4.723660425345103
 }

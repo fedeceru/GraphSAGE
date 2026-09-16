@@ -35,7 +35,10 @@ results/*
 
 # Personal exam/presentation prep notes -- not a project deliverable
 STUDY_GUIDE.md
+EXAM_STUDY_GUIDE.md
+presentation_script.md
 presentation/presentation_script.md
+learning_material/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

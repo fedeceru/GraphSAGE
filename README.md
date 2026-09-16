@@ -79,14 +79,16 @@ against `--time_budget_minutes` (default 100, leaving ~20 min of the 2-hour
 hard cap as buffer) before starting each one. If a tier overruns, whatever
 hasn't started yet is skipped and logged in
 `results/scaled_run_manifest.json`, instead of silently running past budget.
-On the run that produced the table above, all four tiers finished in 73.1
-minutes total, comfortably under budget; nothing was skipped.
+On the run that produced the table above, all four tiers finished in 75.3
+minutes total (73.1 for the original pass, plus 3.1 for the sensitivity
+tier's neighborhood-sample-size half, run in a later pass -- see the tier 3
+row below), comfortably under budget; nothing was skipped.
 
 | Tier | What | Reduced from the full protocol | Actual time |
 |---|---|---|---|
 | 1. Sweep | 2 learning rates x **small only** (drop "big": a no-op for mean/GCN, ~2x cost for LSTM/pool) per model x {sup, unsup}. Sup: full 10 epochs. Unsup: capped at **3000 steps** (of 17,050/epoch) -- justified by this repo's own §8.2 embedding-snapshot finding that cluster structure is "largely in place by step 200", so 3000 steps is a principled cutoff for *ranking* candidates, not an arbitrary shortcut. | 48 runs -> 12 new runs (4 models' lr=0.01 candidates reused from the existing default run) | 45.0 min |
 | 2. Multi-seed | 1 new seed (124) alongside the existing seed=123, all 4 models x {sup, unsup}, using tier 1's selected hyperparameters. Sup: 5 epochs. Unsup: capped at 3000 steps. | Full 3-seed x full-epoch study -> 1 new seed x reduced epochs/steps | 24.1 min |
-| 3. Sensitivity | K-sweep only (K in {1, 3}; K=2 reused), `graphsage_mean` supervised, 5 epochs. Sample-size sub-sweep dropped entirely. | 7 configs -> 2 new configs | 0.9 min |
+| 3. Sensitivity | Both halves of `sensitivity_ppi_experiments.py`, `graphsage_mean` supervised, 5 epochs each: K-sweep (K in {1, 3}; K=2 reused) **and** the neighborhood-sample-size sweep (S1=S2=S in {5, 10, 25, 50, 75}, K=2 fixed) -- an earlier pass ran `--k_only` and skipped the sample-size half to fit the original budget; it was run to completion afterward. | 12 configs -> 7 new configs (2 fresh K points + 5 fresh sample-size points; K=2 reused both times) | 3.1 min |
 | 4. Noise robustness | 3 of 5 noise levels ({0.0, 0.5, 1.0}), GCN + pool, 5 epochs each. | 5 noise levels -> 3 | 3.0 min |
 
 One caveat worth knowing: tier 2's seed=123 point and tier 3's K=2 point both
@@ -95,14 +97,20 @@ One caveat worth knowing: tier 2's seed=123 point and tier 3's K=2 point both
 trained at the reduced budget. That's intentional (why retrain something
 already correct?), but it means those specific mean/std and K-vs-F1 numbers
 mix two different training budgets, not just seed/K. Treat them as
-suggestive rather than a clean controlled comparison.
+suggestive rather than a clean controlled comparison. The sample-size
+sensitivity sweep does not have this issue -- all 5 of its points (S=5..75)
+are freshly trained at the same 5-epoch budget, nothing reused.
 `results/scaled_run_manifest.json` records exactly which candidates were
 fresh vs. reused for every tier.
 
 The qualitative results survive the cuts: the reduced sweep picked lr=0.01
 (the existing default) as best for all 4 supervised variants, K=2 clearly
 beats K=1 (0.585 vs. 0.472 F1) with K=3 not exceeding it (0.575, consistent
-with the paper's "marginal returns beyond K=2"), and the noise-robustness
+with the paper's "marginal returns beyond K=2"). Neighborhood sample size
+shows the same diminishing-returns shape the paper's own Figure 2B reports
+on citation data: F1 rises from 0.536 (S=5) to 0.640 (S=75), but most of
+that gain lands by S=25 (0.593), while runtime keeps climbing the whole way
+(0.35 to 0.83 sec/iteration). And the noise-robustness
 check reproduces Figure 3's qualitative claim on PPI: GraphSAGE-pool stays
 above both GCN and the raw-features baseline at every noise level
 (0.546/0.453/0.462 F1 at noise 0.0/0.5/1.0), while GCN starts clearly ahead
@@ -185,10 +193,10 @@ of the paper this reproduction addresses. Briefly, in the order they run:
   `notebook.ipynb` §8 read it automatically.
 - **`multiseed_ppi_experiments.py`**: repeats a variant under a second
   `--seed` and reports mean/std. Writes `results/seed_variance_ppi.json`.
-- **`sensitivity_ppi_experiments.py`**: Section 4.3's K-sensitivity claim
-  (`--k_only` here: the neighborhood-sample-size half is dropped to fit the
-  time budget). Writes `results/sensitivity_ppi.json`, read by
-  `notebook.ipynb` §8.3.
+- **`sensitivity_ppi_experiments.py`**: Section 4.3's two-part claim -- both
+  the K-sweep and the neighborhood-sample-size sweep (`--k_only` restricts
+  it to just the K half; this repo's own runs no longer pass it). Writes
+  `results/sensitivity_ppi.json`, read by `notebook.ipynb` §8.3.
 - **`noise_robustness_ppi_experiments.py`**: the Figure 3 / Theorem 1
   feature-noise-robustness check. Writes `results/noise_robustness_ppi.json`,
   read by `notebook.ipynb` §9.1.
